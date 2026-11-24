@@ -58,7 +58,7 @@ object Format {
             null
         } ?: return null
         val now = System.currentTimeMillis()
-        return DateUtils.getRelativeTimeSpanString(minOf(millis, now), now, DateUtils.MINUTE_MILLIS).toString()
+        return DateUtils.getRelativeTimeSpanString(minOf(millis, now), now, 60_000L).toString()
     }
 
     /** "12:34" or "1:02:33" -> seconds. */
