@@ -53,10 +53,7 @@ class PlaybackService : MediaSessionService() {
             .setSeekBackIncrementMs(10_000)
             .setSeekForwardIncrementMs(10_000)
             .build()
-        // up to 1080p (also for vertical videos); the settings menu can still pick others
-        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-            .setMaxVideoSize(1920, 1920)
-            .build()
+        applyQualityLimit()
         val s = MediaSession.Builder(this, player).build()
         session = s
         addSession(s)
@@ -69,17 +66,49 @@ class PlaybackService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
-    /** Loads and starts [info]. */
-    fun play(info: StreamInfo) {
-        val meta = MediaMetadata.Builder()
-            .setTitle(info.name)
-            .setArtist(info.uploaderName)
-            .setDisplayTitle(info.name)
-            .apply {
-                Format.pick(info.thumbnails, 720)?.let { setArtworkUri(Uri.parse(it)) }
-            }
+    /** HDR streams of the current video (empty if none or HDR is off). */
+    var currentHdr: List<HdrStream> = emptyList()
+        private set
+
+    /**
+     * Automatic quality: up to the resolution chosen in the settings (the short side, so vertical
+     * videos get the same quality), regardless of the screen size. Clears a manual choice.
+     */
+    fun applyQualityLimit() {
+        val q = Settings(this).maxQuality
+        val long = q * 16 / 9
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .clearViewportSizeConstraints()
+            .setMaxVideoSize(long, long)
+            .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
             .build()
-        val source = StreamResolver.build(info, meta)
+    }
+
+    /** Rebuilds the current video with or without HDR streams, keeping the position. */
+    fun reload(hdr: List<HdrStream>) {
+        val info = currentInfo ?: return
+        val pos = player.currentPosition
+        val playing = player.playWhenReady
+        currentHdr = hdr
+        player.setMediaSource(StreamResolver.build(info, metadataOf(info), hdr), pos)
+        player.prepare()
+        player.playWhenReady = playing
+    }
+
+    private fun metadataOf(info: StreamInfo): MediaMetadata = MediaMetadata.Builder()
+        .setTitle(info.name)
+        .setArtist(info.uploaderName)
+        .setDisplayTitle(info.name)
+        .apply {
+            Format.pick(info.thumbnails, 720)?.let { setArtworkUri(Uri.parse(it)) }
+        }
+        .build()
+
+    /** Loads and starts [info]. */
+    fun play(info: StreamInfo, hdr: List<HdrStream> = emptyList()) {
+        val source = StreamResolver.build(info, metadataOf(info), hdr)
+        currentHdr = hdr
+        applyQualityLimit()
         currentUrl = info.url
         currentInfo = info
         session?.setSessionActivity(openPlayerIntent(info.url))
@@ -94,6 +123,7 @@ class PlaybackService : MediaSessionService() {
         player.clearMediaItems()
         currentUrl = null
         currentInfo = null
+        currentHdr = emptyList()
         stopSelf()
     }
 

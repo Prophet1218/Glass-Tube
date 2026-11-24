@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.glasstube"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.0.1"
+        versionCode = 2
+        versionName = "0.1.0"
     }
 
     // Fixed signing key kept in the repo, so APKs built on GitHub and in Android Studio
@@ -76,7 +76,11 @@ dependencies {
 
     // YouTube data without an API key
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.27.1")
+    // the extractor's JSON library (needed directly for the HDR formats)
+    implementation("com.github.TeamNewPipe:nanojson:e9d656ddb49a412a5a0a5d5ef20ca7ef09549996")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // Google sign-in page
+    implementation("androidx.webkit:webkit:1.12.1")
 
     // Player and background playback
     implementation("androidx.media3:media3-exoplayer:1.6.1")

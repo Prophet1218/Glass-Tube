@@ -4,12 +4,49 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/list"
+    <!-- everything the glass refracts -->
+    <FrameLayout
+        android:id="@+id/content"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:clipToPadding="false"
-        android:overScrollMode="never" />
+        android:layout_height="match_parent">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/homeList"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:overScrollMode="never" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/youList"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:overScrollMode="never"
+            android:visibility="gone" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/searchList"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/app_bg"
+            android:clipToPadding="false"
+            android:overScrollMode="never"
+            android:visibility="gone" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/shortsList"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#000000"
+            android:overScrollMode="never"
+            android:visibility="gone" />
+
+        <FrameLayout
+            android:id="@+id/pageHost"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+    </FrameLayout>
 
     <!-- search suggestions (glass panel above the bar) -->
     <LinearLayout
@@ -24,48 +61,108 @@
         android:paddingBottom="6dp"
         android:visibility="gone" />
 
-    <!-- floating glass search bar -->
-    <LinearLayout
-        android:id="@+id/bar"
+    <!-- floating glass dock: tab bar + search -->
+    <FrameLayout
+        android:id="@+id/dock"
         android:layout_width="match_parent"
-        android:layout_height="54dp"
+        android:layout_height="62dp"
         android:layout_gravity="bottom"
         android:layout_marginStart="16dp"
-        android:layout_marginEnd="16dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="18dp"
-        android:paddingEnd="8dp">
+        android:layout_marginEnd="16dp">
 
-        <ImageView
-            android:id="@+id/searchIcon"
-            android:layout_width="20dp"
-            android:layout_height="20dp"
-            android:importantForAccessibility="no"
-            android:src="@drawable/ic_search" />
-
-        <EditText
-            android:id="@+id/field"
-            android:layout_width="0dp"
+        <FrameLayout
+            android:id="@+id/tabBar"
+            android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_marginStart="12dp"
-            android:layout_weight="1"
-            android:background="@null"
-            android:hint="@string/search_hint"
-            android:imeOptions="actionSearch"
-            android:importantForAutofill="no"
-            android:inputType="text"
-            android:maxLines="1"
-            android:textSize="17sp" />
+            android:layout_marginEnd="72dp">
 
-        <ImageView
-            android:id="@+id/clear"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/clear_history"
-            android:padding="9dp"
-            android:src="@drawable/ic_close"
-            android:visibility="gone" />
-    </LinearLayout>
+            <View
+                android:id="@+id/tabIndicator"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_gravity="center_vertical" />
+
+            <LinearLayout
+                android:id="@+id/tabs"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="horizontal" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/searchButton"
+            android:layout_width="62dp"
+            android:layout_height="62dp"
+            android:layout_gravity="end"
+            android:contentDescription="@string/search_hint">
+
+            <ImageView
+                android:id="@+id/searchButtonIcon"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_search" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/searchBack"
+            android:layout_width="62dp"
+            android:layout_height="62dp"
+            android:layout_gravity="start"
+            android:contentDescription="@string/back"
+            android:visibility="invisible">
+
+            <ImageView
+                android:id="@+id/searchBackIcon"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_back" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:id="@+id/searchBar"
+            android:layout_width="62dp"
+            android:layout_height="62dp"
+            android:layout_gravity="end"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="20dp"
+            android:paddingEnd="8dp"
+            android:visibility="invisible">
+
+            <ImageView
+                android:id="@+id/searchIcon"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_search" />
+
+            <EditText
+                android:id="@+id/field"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:background="@null"
+                android:hint="@string/search_hint"
+                android:imeOptions="actionSearch"
+                android:importantForAutofill="no"
+                android:inputType="text"
+                android:maxLines="1"
+                android:textSize="17sp" />
+
+            <ImageView
+                android:id="@+id/clear"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/clear_history"
+                android:padding="9dp"
+                android:src="@drawable/ic_close"
+                android:visibility="gone" />
+        </LinearLayout>
+    </FrameLayout>
 </FrameLayout>

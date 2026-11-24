@@ -35,7 +35,7 @@ import java.io.IOException
 @OptIn(UnstableApi::class)
 object StreamResolver {
 
-    fun build(info: StreamInfo, metadata: MediaMetadata): MediaSource {
+    fun build(info: StreamInfo, metadata: MediaMetadata, hdr: List<HdrStream> = emptyList()): MediaSource {
         val yt = YtDataSource.Factory()
         fun item(uri: String) = MediaItem.Builder()
             .setUri(uri)
@@ -81,8 +81,21 @@ object StreamResolver {
             }
         }
 
+        fun hdrSource(h: HdrStream): MediaSource? = try {
+            val manifest = DashManifestParser().parse(
+                Uri.parse(h.url), ByteArrayInputStream(h.manifest().toByteArray(Charsets.UTF_8))
+            )
+            DashMediaSource.Factory(DefaultDashChunkSource.Factory(yt), yt)
+                .createMediaSource(manifest, item(h.url))
+        } catch (e: Exception) {
+            null
+        }
+
         val audio = pickAudio(info.audioStreams)
-        val videos = pickVideos(info.videoOnlyStreams).mapNotNull { dash(it) }
+        // HDR versions replace the SDR stream of the same resolution
+        val hdrSides = hdr.map { minOf(it.width, it.height) }.toSet()
+        val videos = hdr.mapNotNull { hdrSource(it) } +
+            pickVideos(info.videoOnlyStreams).filter { shortSide(it) !in hdrSides }.mapNotNull { dash(it) }
         val audioSource = audio?.let { dash(it) }
         if (videos.isNotEmpty() && audioSource != null) {
             return MergingMediaSource(true, true, *(videos + audioSource).toTypedArray())
@@ -119,7 +132,7 @@ object StreamResolver {
         }
         return streams
             .filter { it.isUrl && it.itagItem != null && it.height > 0 && it.content.isNotEmpty() }
-            .groupBy { it.height }
+            .groupBy { shortSide(it) }
             .mapNotNull { (_, list) ->
                 list.sortedWith(
                     compareBy<VideoStream> { codecRank(it) }
@@ -127,8 +140,10 @@ object StreamResolver {
                         .thenByDescending { it.bitrate }
                 ).firstOrNull()
             }
-            .sortedByDescending { it.height }
+            .sortedByDescending { shortSide(it) }
     }
+
+    private fun shortSide(s: VideoStream): Int = if (s.width > 0) minOf(s.width, s.height) else s.height
 
     /** The original-language track with the highest bitrate. */
     private fun pickAudio(streams: List<AudioStream>): AudioStream? {

@@ -1,45 +1,209 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical">
+    android:layout_height="match_parent">
 
-    <!-- black strip behind the status bar -->
-    <View
-        android:id="@+id/statusPad"
+    <LinearLayout
+        android:id="@+id/column"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:background="#000000" />
+        android:layout_height="match_parent"
+        android:orientation="vertical">
 
-    <com.example.glasstube.RatioFrameLayout
-        android:id="@+id/playerBox"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="#000000">
-
-        <androidx.media3.ui.PlayerView
-            android:id="@+id/playerView"
+        <!-- black strip behind the status bar -->
+        <View
+            android:id="@+id/statusPad"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            app:show_buffering="when_playing"
-            app:show_subtitle_button="false"
-            app:shutter_background_color="#000000" />
+            android:layout_height="0dp"
+            android:background="#000000" />
 
-        <ProgressBar
-            android:id="@+id/loading"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_gravity="center"
-            android:indeterminateTint="#FFFFFF" />
-    </com.example.glasstube.RatioFrameLayout>
+        <com.example.glasstube.RatioFrameLayout
+            android:id="@+id/playerBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#000000">
 
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/list"
+            <androidx.media3.ui.PlayerView
+                android:id="@+id/playerView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                app:shutter_background_color="#000000"
+                app:use_controller="false" />
+
+            <!-- glass controls -->
+            <FrameLayout
+                android:id="@+id/controls"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/player_scrim">
+
+                <FrameLayout
+                    android:id="@+id/btnDown"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_gravity="top|start"
+                    android:layout_margin="10dp"
+                    android:contentDescription="@string/back">
+
+                    <ImageView
+                        android:id="@+id/icDown"
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:layout_gravity="center"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_chevron_down" />
+                </FrameLayout>
+
+                <FrameLayout
+                    android:id="@+id/btnSettings"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_gravity="top|end"
+                    android:layout_margin="10dp"
+                    android:contentDescription="@string/settings">
+
+                    <ImageView
+                        android:id="@+id/icSettings"
+                        android:layout_width="21dp"
+                        android:layout_height="21dp"
+                        android:layout_gravity="center"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_settings" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <FrameLayout
+                        android:id="@+id/btnBack10"
+                        android:layout_width="50dp"
+                        android:layout_height="50dp"
+                        android:contentDescription="@string/rewind">
+
+                        <ImageView
+                            android:id="@+id/icBack10"
+                            android:layout_width="26dp"
+                            android:layout_height="26dp"
+                            android:layout_gravity="center"
+                            android:importantForAccessibility="no"
+                            android:src="@drawable/ic_replay10" />
+                    </FrameLayout>
+
+                    <FrameLayout
+                        android:id="@+id/btnPlay"
+                        android:layout_width="66dp"
+                        android:layout_height="66dp"
+                        android:layout_marginStart="28dp"
+                        android:layout_marginEnd="28dp"
+                        android:contentDescription="@string/play_pause">
+
+                        <ImageView
+                            android:id="@+id/icPlay"
+                            android:layout_width="30dp"
+                            android:layout_height="30dp"
+                            android:layout_gravity="center"
+                            android:importantForAccessibility="no"
+                            android:src="@drawable/ic_pause" />
+                    </FrameLayout>
+
+                    <FrameLayout
+                        android:id="@+id/btnFwd10"
+                        android:layout_width="50dp"
+                        android:layout_height="50dp"
+                        android:contentDescription="@string/forward">
+
+                        <ImageView
+                            android:id="@+id/icFwd10"
+                            android:layout_width="26dp"
+                            android:layout_height="26dp"
+                            android:layout_gravity="center"
+                            android:importantForAccessibility="no"
+                            android:src="@drawable/ic_forward10" />
+                    </FrameLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/bottomRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom"
+                    android:layout_marginBottom="16dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="10dp">
+
+                    <TextView
+                        android:id="@+id/time"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:shadowColor="#99000000"
+                        android:shadowRadius="4"
+                        android:textColor="#FFFFFF"
+                        android:textSize="13sp" />
+
+                    <FrameLayout
+                        android:id="@+id/btnFull"
+                        android:layout_width="38dp"
+                        android:layout_height="38dp"
+                        android:contentDescription="@string/fullscreen">
+
+                        <ImageView
+                            android:id="@+id/icFull"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_gravity="center"
+                            android:importantForAccessibility="no"
+                            android:src="@drawable/ic_fullscreen" />
+                    </FrameLayout>
+                </LinearLayout>
+            </FrameLayout>
+
+            <ProgressBar
+                android:id="@+id/loading"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_gravity="center"
+                android:indeterminateTint="#FFFFFF" />
+
+            <com.example.glasstube.GlassSeekBar
+                android:id="@+id/seek"
+                android:layout_width="match_parent"
+                android:layout_height="30dp"
+                android:layout_gravity="bottom" />
+        </com.example.glasstube.RatioFrameLayout>
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/list"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:overScrollMode="never" />
+    </LinearLayout>
+
+    <!-- settings menu (quality, HDR, speed) -->
+    <FrameLayout
+        android:id="@+id/menuScrim"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:clipToPadding="false"
-        android:overScrollMode="never" />
-</LinearLayout>
+        android:layout_height="match_parent"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/menu"
+            android:layout_width="260dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|end"
+            android:orientation="vertical"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp" />
+    </FrameLayout>
+</FrameLayout>

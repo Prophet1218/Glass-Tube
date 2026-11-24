@@ -1,7 +1,10 @@
 package com.example.glasstube
 
 import android.content.Context
+import android.text.format.DateUtils
 import org.schabi.newpipe.extractor.Image
+import org.schabi.newpipe.extractor.localization.DateWrapper
+import java.time.OffsetDateTime
 import java.util.Locale
 
 object Format {
@@ -42,4 +45,29 @@ object Format {
 
     fun joinDot(vararg parts: String?): String =
         parts.filter { !it.isNullOrBlank() }.joinToString("  ·  ")
+
+    private val ISO = Regex("^\\d{4}-\\d{2}-\\d{2}")
+
+    /** "3 days ago" in the phone's language (YouTube's own text when it isn't a raw date). */
+    fun date(d: DateWrapper?, textual: String?): String? {
+        val t = textual?.trim()
+        if (!t.isNullOrEmpty() && !ISO.containsMatchIn(t)) return t
+        val millis = try {
+            d?.instant?.toEpochMilli() ?: t?.let { OffsetDateTime.parse(it).toInstant().toEpochMilli() }
+        } catch (e: Exception) {
+            null
+        } ?: return null
+        val now = System.currentTimeMillis()
+        return DateUtils.getRelativeTimeSpanString(minOf(millis, now), now, DateUtils.MINUTE_MILLIS).toString()
+    }
+
+    /** "12:34" or "1:02:33" -> seconds. */
+    fun parseDuration(text: String?): Long {
+        if (text.isNullOrBlank()) return 0
+        val parts = text.trim().split(':')
+        if (parts.size !in 2..3) return 0
+        var total = 0L
+        for (p in parts) total = total * 60 + (p.trim().toLongOrNull() ?: return 0)
+        return total
+    }
 }

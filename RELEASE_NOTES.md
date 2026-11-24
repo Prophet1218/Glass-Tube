@@ -1,11 +1,17 @@
-## Glass Tube 0.0.1
+## Glass Tube 0.1.0
 
-First version.
+New
+- Home page with recommended videos. Signed in it's your own YouTube home feed (with a Subscriptions tab); without an account it's built from what you watched and searched
+- Google sign-in on Google's own page. Signed in you get your history, liked videos, Watch later and playlists
+- Liquid glass tab bar at the bottom (Home, Shorts, You) with a sliding glass highlight, and a glass search button that expands into the search bar
+- Shorts: full-screen vertical videos, swipe up and down
+- "You" page like YouTube's: account, history strip, library, settings
+- Settings: highest automatic quality (1080p / 1440p / 2160p), HDR on/off, sign-out, clearing history
+- 1440p and 2160p playback, and HDR (when the phone and the video support it)
+- New player controls: liquid glass buttons over the video, no dark bar; double-tap left or right to skip 10 seconds
+- New seek bar: thicker, no knob, glows softly while you drag; tapping anywhere on it jumps there
+- Player menu: quality (with HDR versions marked), HDR, playback speed
+- The video description opens and closes with an animation
 
-- Floating liquid glass search bar at the bottom (real blur and edge refraction on Android 13+), with search suggestions and recent searches in a glass panel
-- Video search with thumbnails, duration, channel, views and upload date; more results load as you scroll
-- Player screen: video up to 1080p (quality can be changed in the player's settings menu), title, channel, description and related videos
-- Background playback with a media notification: keeps playing when you leave the app or turn off the screen (only the audio is downloaded then)
-- Fullscreen with the button or by turning the phone
-- Opens YouTube links and "Share" from other apps
-- Hungarian and English interface, following the phone's language; light and dark mode
+Fixed
+- The upload date showed as a raw timestamp
