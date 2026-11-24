@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="app_bg">#0E1016</color>
+    <color name="text">#F2F3F7</color>
+    <color name="text_muted">#99F2F3F7</color>
+    <color name="thumb_placeholder">#1C1F27</color>
+    <color name="chip_bg">#1AFFFFFF</color>
+    <color name="accent">#0A84FF</color>
+</resources>

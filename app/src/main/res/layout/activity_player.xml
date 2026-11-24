@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <!-- black strip behind the status bar -->
+    <View
+        android:id="@+id/statusPad"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:background="#000000" />
+
+    <com.example.glasstube.RatioFrameLayout
+        android:id="@+id/playerBox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#000000">
+
+        <androidx.media3.ui.PlayerView
+            android:id="@+id/playerView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            app:show_buffering="when_playing"
+            app:show_subtitle_button="false"
+            app:shutter_background_color="#000000" />
+
+        <ProgressBar
+            android:id="@+id/loading"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_gravity="center"
+            android:indeterminateTint="#FFFFFF" />
+    </com.example.glasstube.RatioFrameLayout>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:overScrollMode="never" />
+</LinearLayout>

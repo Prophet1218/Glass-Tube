@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Glass Tube</string>
+    <string name="search_hint">Search YouTube</string>
+    <string name="home_subtitle">Search for something with the bar below</string>
+    <string name="recent_searches">Recent searches</string>
+    <string name="clear_history">Clear</string>
+    <string name="results_for">Results</string>
+    <string name="no_results">No results</string>
+    <string name="error_generic">Something went wrong: %1$s</string>
+    <string name="error_blocked">YouTube is temporarily blocking requests. Try again a bit later.</string>
+    <string name="error_network">No internet connection</string>
+    <string name="retry">Retry</string>
+    <string name="views">%1$s views</string>
+    <string name="watching">%1$s watching</string>
+    <string name="live">LIVE</string>
+    <string name="short_label">SHORT</string>
+    <string name="subscribers">%1$s subscribers</string>
+    <string name="likes">%1$s likes</string>
+    <string name="action_background">Background</string>
+    <string name="action_share">Share</string>
+    <string name="action_open_youtube">YouTube</string>
+    <string name="show_more">more</string>
+    <string name="show_less">less</string>
+    <string name="related">Up next</string>
+    <string name="playback_error">Playback failed: %1$s</string>
+    <string name="not_a_video_link">This isn\'t a YouTube video link</string>
+    <string name="unit_k">K</string>
+    <string name="unit_m">M</string>
+    <string name="unit_b">B</string>
+</resources>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="search_hint">Keresés a YouTube-on</string>
+    <string name="home_subtitle">Keress valamit a lenti sávval</string>
+    <string name="recent_searches">Legutóbbi keresések</string>
+    <string name="clear_history">Törlés</string>
+    <string name="results_for">Találatok</string>
+    <string name="no_results">Nincs találat</string>
+    <string name="error_generic">Hiba történt: %1$s</string>
+    <string name="error_blocked">A YouTube átmenetileg blokkolja a kéréseket. Próbáld újra kicsit később.</string>
+    <string name="error_network">Nincs internetkapcsolat</string>
+    <string name="retry">Újra</string>
+    <string name="views">%1$s megtekintés</string>
+    <string name="watching">%1$s nézi</string>
+    <string name="live">ÉLŐ</string>
+    <string name="short_label">SHORT</string>
+    <string name="subscribers">%1$s feliratkozó</string>
+    <string name="likes">%1$s kedvelés</string>
+    <string name="action_background">Háttérben</string>
+    <string name="action_share">Megosztás</string>
+    <string name="action_open_youtube">YouTube</string>
+    <string name="show_more">több</string>
+    <string name="show_less">kevesebb</string>
+    <string name="related">Következő</string>
+    <string name="playback_error">A lejátszás nem sikerült: %1$s</string>
+    <string name="not_a_video_link">Ez nem YouTube-videó link</string>
+    <string name="unit_k">E</string>
+    <string name="unit_m">M</string>
+    <string name="unit_b">Mrd</string>
+</resources>
