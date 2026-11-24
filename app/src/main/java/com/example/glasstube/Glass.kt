@@ -68,10 +68,11 @@ object Glass {
      * A glass button over video: dark frost (so the white icon reads on any picture), a sheen
      * and the rim.
      */
-    fun overVideo(ctx: Context, radius: Float?): Drawable {
+    fun overVideo(ctx: Context, radius: Float?, lens: Boolean = false): Drawable {
         val fill = GradientDrawable().apply {
             if (radius != null) cornerRadius = radius else shape = GradientDrawable.OVAL
-            setColor(Color.argb(70, 20, 22, 28))
+            // with the real lens underneath only a light veil, so the refraction shows
+            setColor(if (lens) Color.argb(28, 20, 22, 28) else Color.argb(70, 20, 22, 28))
         }
         val skin = GlassSkinDrawable(ctx.resources.displayMetrics.density)
         skin.cornerRadius = radius

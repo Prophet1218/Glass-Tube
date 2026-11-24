@@ -3,7 +3,7 @@ package com.example.glasstube
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
-import android.graphics.BlurMaskFilter
+import android.graphics.LinearGradient
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -70,20 +70,21 @@ class GlassSeekBar @JvmOverloads constructor(
     private var touch = 0f
     private var anim: ValueAnimator? = null
 
-    private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(80, 255, 255, 255) }
-    private val buffer = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(120, 255, 255, 255) }
-    private val played = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
-    private val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        maskFilter = BlurMaskFilter(7f * d, BlurMaskFilter.Blur.NORMAL)
-    }
-    private val head = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val rect = RectF()
+    /** Glow strength while not touched (0 = none). */
+    var restGlow = 0f
+        set(v) {
+            field = v
+            invalidate()
+        }
 
-    init {
-        // the blur of the glow needs software drawing (a small view, cheap)
-        setLayerType(LAYER_TYPE_SOFTWARE, null)
-    }
+    private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(70, 255, 255, 255) }
+    private val buffer = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(110, 255, 255, 255) }
+    private val played = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val glow = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val core = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val rect = RectF()
+    private var gradLeft = -1f
+    private var gradRight = -1f
 
     private fun animateTouch(target: Float) {
         anim?.cancel()
@@ -139,9 +140,10 @@ class GlassSeekBar @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         if (width == 0) return
-        val thick = restThickness + (8f * d - restThickness) * touch
-        val bottom = height - 2f * d * touch
+        val thick = restThickness + (7f * d - restThickness) * touch
+        val bottom = height - 2f * d * touch - 1f * d
         val top = bottom - thick
+        val cy = (top + bottom) / 2f
         val left = sidePadding
         val right = width - sidePadding
         val r = thick / 2f
@@ -156,21 +158,40 @@ class GlassSeekBar @JvmOverloads constructor(
             rect.set(left, top, bx, bottom)
             canvas.drawRoundRect(rect, r, r, buffer)
         }
-        if (touch > 0.01f && px > left) {
-            // soft glow around the played part
-            glow.alpha = (150 * touch).toInt()
-            rect.set(left, top, px, bottom)
-            canvas.drawRoundRect(rect, r, r, glow)
-            // brighter halo at the finger
-            val hr = 18f * d * touch
-            head.shader = RadialGradient(
-                px, (top + bottom) / 2f, hr.coerceAtLeast(1f),
-                Color.argb((170 * touch).toInt(), 255, 255, 255), Color.TRANSPARENT, Shader.TileMode.CLAMP
+
+        val head = px.coerceAtLeast(left + thick)
+        // comet-like glow trailing behind the head (stronger while dragging)
+        val g = (restGlow + (1f - restGlow) * touch).coerceIn(0f, 1f)
+        if (g > 0.01f && px > left) {
+            val gr = 16f * d * (0.8f + 0.4f * touch)
+            glow.shader = RadialGradient(
+                0f, 0f, gr,
+                intArrayOf(Color.argb((150 * g).toInt(), 225, 238, 255), Color.argb((60 * g).toInt(), 190, 215, 255), Color.TRANSPARENT),
+                floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP
             )
-            canvas.drawCircle(px, (top + bottom) / 2f, hr, head)
+            canvas.save()
+            canvas.translate(head - gr * 1.2f, cy)
+            canvas.scale(2.4f, 1f)
+            canvas.drawCircle(0f, 0f, gr, glow)
+            canvas.restore()
+            val cr = thick * 2.2f
+            core.shader = RadialGradient(
+                head - r, cy, cr,
+                Color.argb((200 * g).toInt(), 255, 255, 255), Color.TRANSPARENT, Shader.TileMode.CLAMP
+            )
+            canvas.drawCircle(head - r, cy, cr, core)
         }
         if (px > left) {
-            rect.set(left, top, px.coerceAtLeast(left + thick), bottom)
+            // light blue fading into white at the head
+            if (gradLeft != left || gradRight != head) {
+                gradLeft = left
+                gradRight = head
+                played.shader = LinearGradient(
+                    left, 0f, head, 0f,
+                    Color.argb(235, 160, 196, 240), Color.WHITE, Shader.TileMode.CLAMP
+                )
+            }
+            rect.set(left, top, head, bottom)
             canvas.drawRoundRect(rect, r, r, played)
         }
     }

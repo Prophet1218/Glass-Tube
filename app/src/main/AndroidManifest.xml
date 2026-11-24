@@ -19,7 +19,9 @@
 
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density"
             android:exported="true"
+            android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -29,10 +31,11 @@
 
         <activity
             android:name=".PlayerActivity"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density"
+            android:excludeFromRecents="true"
             android:exported="true"
-            android:launchMode="singleTask"
-            android:supportsPictureInPicture="false">
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <!-- YouTube links opened from other apps -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

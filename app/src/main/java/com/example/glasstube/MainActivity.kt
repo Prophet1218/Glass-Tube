@@ -1,18 +1,29 @@
 package com.example.glasstube
 
 import android.animation.ValueAnimator
+import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.res.Configuration
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorFilter
 import android.graphics.Outline
+import android.graphics.Path
+import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.graphics.RectF
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.os.Build
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.animation.DecelerateInterpolator
@@ -49,9 +60,57 @@ import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.linkhandler.SearchQueryHandler
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
+import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
+import kotlin.math.abs
 
-class MainActivity : AppCompatActivity() {
+/** Draws [inner] with a rounded hole cut out (the tab bar under the pressed glass capsule). */
+class HoleDrawable(private val inner: Drawable) : Drawable() {
+    private val path = Path()
+    private val rect = RectF()
+    private var hole = false
+
+    fun setHole(r: RectF?, radius: Float) {
+        if (r == null) {
+            if (!hole) return
+            hole = false
+        } else {
+            hole = true
+            rect.set(r)
+            path.reset()
+            path.addRoundRect(rect, radius, radius, Path.Direction.CW)
+        }
+        invalidateSelf()
+    }
+
+    override fun onBoundsChange(bounds: Rect) {
+        inner.bounds = bounds
+    }
+
+    override fun draw(canvas: Canvas) {
+        if (hole && Build.VERSION.SDK_INT >= 26) {
+            val save = canvas.save()
+            canvas.clipOutPath(path)
+            inner.draw(canvas)
+            canvas.restoreToCount(save)
+        } else {
+            inner.draw(canvas)
+        }
+    }
+
+    override fun setAlpha(alpha: Int) {
+        inner.alpha = alpha
+    }
+
+    override fun setColorFilter(colorFilter: ColorFilter?) {
+        inner.colorFilter = colorFilter
+    }
+
+    @Suppress("OVERRIDE_DEPRECATION")
+    override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+}
+
+class MainActivity : AppCompatActivity(), PlayerSheet.Host {
 
     private enum class Tab { HOME, SHORTS, YOU }
 
@@ -67,11 +126,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tabBar: FrameLayout
     private lateinit var tabIndicator: View
     private lateinit var tabs: LinearLayout
+    private lateinit var collapsedIcon: ImageView
     private lateinit var searchButton: FrameLayout
     private lateinit var searchBack: FrameLayout
     private lateinit var searchBar: LinearLayout
     private lateinit var field: EditText
     private lateinit var clear: ImageView
+    private lateinit var mini: LinearLayout
+    private lateinit var miniTitle: TextView
+    private lateinit var miniChannel: TextView
+    private lateinit var miniPlay: ImageView
+    private lateinit var miniClose: ImageView
 
     private lateinit var homeAdapter: VideoAdapter
     private lateinit var youAdapter: VideoAdapter
@@ -80,6 +145,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var store: Store
     private lateinit var settings: Settings
     private lateinit var shorts: ShortsPager
+    private lateinit var sheet: PlayerSheet
 
     private var lens: LensEffect? = null
     private var lensOn = false
@@ -92,6 +158,25 @@ class MainActivity : AppCompatActivity() {
     private var searchAnim: ValueAnimator? = null
     private val tabViews = ArrayList<LinearLayout>()
     private var youIcon: ImageView? = null
+    private var tabBarBg: HoleDrawable? = null
+    private var indicatorFrost: GradientDrawable? = null
+    private var indicatorGlass: GlassSkinDrawable? = null
+
+    // collapsing tab bar
+    private var barCollapse = 0f
+    private var collapseTarget = 0f
+    private var collapseAnim: ValueAnimator? = null
+
+    // pressed / dragged glass capsule
+    private var pressP = 0f
+    private var pressAnim: ValueAnimator? = null
+    private var indicatorAnim: ValueAnimator? = null
+    private var touchDownX = 0f
+    private var draggingTab = false
+
+    // mini player
+    private var miniShown = false
+    private var sheetProgress = 0f
 
     private val yt = ServiceList.YouTube
 
@@ -139,11 +224,17 @@ class MainActivity : AppCompatActivity() {
         tabBar = findViewById(R.id.tabBar)
         tabIndicator = findViewById(R.id.tabIndicator)
         tabs = findViewById(R.id.tabs)
+        collapsedIcon = findViewById(R.id.collapsedIcon)
         searchButton = findViewById(R.id.searchButton)
         searchBack = findViewById(R.id.searchBack)
         searchBar = findViewById(R.id.searchBar)
         field = findViewById(R.id.field)
         clear = findViewById(R.id.clear)
+        mini = findViewById(R.id.mini)
+        miniTitle = findViewById(R.id.miniTitle)
+        miniChannel = findViewById(R.id.miniChannel)
+        miniPlay = findViewById(R.id.miniPlay)
+        miniClose = findViewById(R.id.miniClose)
         history = SearchHistory(this)
         store = Store(this)
         settings = Settings(this)
@@ -163,20 +254,24 @@ class MainActivity : AppCompatActivity() {
             rv.adapter = ad
             rv.itemAnimator = null
         }
-        shorts = ShortsPager(this, shortsList) { navBottom + dp(62) + dp(12) }
+        shorts = ShortsPager(this, shortsList, { navBottom + dp(56) + dp(12) }) { openVideo(it) }
 
         setupGlass()
         setupTabs()
+        setupMini()
         setupSearch()
         setupInsets()
         setupScrolling()
+        sheet = PlayerSheet(this, root, this)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 when {
+                    sheet.handleBack() -> Unit
                     field.hasFocus() -> leaveField()
                     pages.isNotEmpty() -> popPage()
                     searchActive -> collapseSearch()
+                    barCollapse > 0.5f -> setBarCollapsed(false)
                     tab != Tab.HOME -> selectTab(Tab.HOME)
                     else -> finish()
                 }
@@ -186,28 +281,142 @@ class MainActivity : AppCompatActivity() {
         selectTab(Tab.HOME, animate = false)
         loadHome()
         refreshAccountInBackground()
+        handleIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        val url = intent?.getStringExtra(PlayerActivity.EXTRA_URL) ?: return
+        intent.removeExtra(PlayerActivity.EXTRA_URL)
+        if (sheet.currentUrl == url) sheet.expand() else sheet.open(url)
     }
 
     override fun onStart() {
         super.onStart()
         if (tab == Tab.SHORTS && pages.isEmpty() && !searchActive) shorts.onShown()
+        sheet.onStart()
     }
 
     override fun onStop() {
         super.onStop()
         shorts.onHidden()
+        sheet.onStop(isChangingConfigurations)
     }
 
     override fun onResume() {
         super.onResume()
-        // the watch history may have changed on the player screen
         if (tab == Tab.YOU) buildYou()
         if (searchActive && currentQuery == null && !field.hasFocus()) showSearchIdle()
     }
 
     override fun onDestroy() {
         shorts.release()
+        sheet.onDestroy(isFinishing)
         super.onDestroy()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        sheet.onConfigurationChanged(newConfig)
+        dock.post { applyDockLayout() }
+    }
+
+    // ================================================================ player sheet host
+
+    override fun statusTop(): Int = statusTop
+    override fun navBottom(): Int = navBottom
+
+    override fun miniThumbRect(out: RectF): Boolean {
+        if (!miniShown || root.height == 0) return false
+        val lp = mini.layoutParams as FrameLayout.LayoutParams
+        val top = root.height - lp.bottomMargin - dp(56)
+        val left = lp.marginStart + dp(7)
+        val t = top + (dp(56) - dp(42)) / 2f
+        out.set(left.toFloat(), t, left + dpf(75f), t + dpf(42f))
+        return true
+    }
+
+    override fun onSheetProgress(f: Float) {
+        val wasDark = sheetProgress > 0.5f
+        sheetProgress = f
+        dock.alpha = 1f - f
+        dock.translationY = f * dpf(90f)
+        mini.alpha = (1f - f * 2.2f).coerceIn(0f, 1f)
+        if (f > 0.01f && suggestions.visibility == View.VISIBLE) hideSuggestions()
+        if ((f > 0.5f) != wasDark) applyBars()
+        if (f > 0.5f && tab == Tab.SHORTS) shorts.onHidden()
+        if (f < 0.01f && wasDark && tab == Tab.SHORTS && !searchActive && pages.isEmpty()) shorts.onShown()
+        root.invalidate()
+    }
+
+    override fun onNowPlaying(info: StreamInfo?) {
+        if (info == null) {
+            miniShown = false
+        } else {
+            miniShown = true
+            miniTitle.text = info.name
+            miniChannel.text = info.uploaderName
+        }
+        placeMini()
+        applyListPadding()
+    }
+
+    override fun onPlayingChanged(playing: Boolean) {
+        miniPlay.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play)
+    }
+
+    override fun onSheetClosed() {
+        miniShown = false
+        placeMini()
+        applyListPadding()
+        applyBars()
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupMini() {
+        mini.background = Glass.skin(this, null, lensOn)
+        val text = Glass.textColor(this)
+        miniPlay.setColorFilter(text)
+        miniClose.setColorFilter(ColorUtils.setAlphaComponent(text, 170))
+        miniPlay.setOnClickListener { sheet.togglePlay() }
+        miniClose.setOnClickListener { sheet.close() }
+        mini.setOnTouchListener { _, ev -> sheet.forwardMiniTouch(ev) }
+    }
+
+    /** Mini player above the tab bar, or inline between the collapsed bar and search. */
+    private fun placeMini() {
+        if (!miniShown) {
+            mini.visibility = View.GONE
+            root.invalidate()
+            return
+        }
+        mini.visibility = View.VISIBLE
+        val c = if (searchActive) 0f else barCollapse.coerceIn(0f, 1f)
+        val dockBottom = (dock.layoutParams as FrameLayout.LayoutParams).bottomMargin
+        val above = dockBottom + dp(56) + dp(8)
+        val lp = mini.layoutParams as FrameLayout.LayoutParams
+        lp.bottomMargin = (above + (dockBottom - above) * c).toInt()
+        val side = (dp(16) + (dp(16 + 56 + 8) - dp(16)) * c).toInt()
+        lp.marginStart = side
+        lp.marginEnd = side
+        mini.layoutParams = lp
+        miniClose.alpha = (1f - c * 2f).coerceIn(0f, 1f)
+        miniClose.visibility = if (c > 0.5f) View.GONE else View.VISIBLE
+        if (::sheet.isInitialized && sheet.progress < 0.999f) sheet.applyGeometry()
+        root.invalidate()
+    }
+
+    private fun applyBars() {
+        val dark = sheetProgress > 0.5f || (tab == Tab.SHORTS && !searchActive && pages.isEmpty()) || Glass.isNight(this)
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !dark
+            isAppearanceLightNavigationBars = !(tab == Tab.SHORTS && !searchActive && pages.isEmpty()) && !Glass.isNight(this@MainActivity)
+        }
     }
 
     // ================================================================ glass
@@ -233,7 +442,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applySkins() {
-        tabBar.background = Glass.skin(this, null, lensOn)
+        val bg = HoleDrawable(Glass.skin(this, null, lensOn))
+        tabBarBg = bg
+        tabBar.background = bg
+        tabBar.outlineProvider = null
         searchButton.background = Glass.skin(this, null, lensOn)
         searchBack.background = Glass.skin(this, null, lensOn)
         searchBar.background = Glass.skin(this, null, lensOn)
@@ -245,10 +457,21 @@ class MainActivity : AppCompatActivity() {
         }
         suggestions.clipToOutline = true
         val night = Glass.isNight(this)
-        tabIndicator.background = GradientDrawable().apply {
-            cornerRadius = dpf(26f)
-            setColor(if (night) Color.argb(46, 255, 255, 255) else Color.argb(20, 0, 0, 0))
+        // resting capsule: frosted; pressed: clear liquid glass (rim + sheen over the lens)
+        val frost = GradientDrawable().apply {
+            cornerRadius = dpf(23f)
+            setColor(if (night) Color.argb(46, 255, 255, 255) else Color.argb(22, 0, 0, 0))
         }
+        val glass = GlassSkinDrawable(density).apply {
+            cornerRadius = null
+            setTint(0.35f, null)
+            setRim(true)
+            setContentColor(if (night) Color.WHITE else Color.argb(200, 255, 255, 255))
+            alpha = 0
+        }
+        indicatorFrost = frost
+        indicatorGlass = glass
+        tabIndicator.background = LayerDrawable(arrayOf(frost, glass))
         val text = Glass.textColor(this)
         findViewById<ImageView>(R.id.searchButtonIcon).setColorFilter(text)
         findViewById<ImageView>(R.id.searchBackIcon).setColorFilter(text)
@@ -266,12 +489,12 @@ class MainActivity : AppCompatActivity() {
         out.set(l, t, l + v.width * v.scaleX, t + v.height * v.scaleY)
     }
 
-    private fun slot(l: LensEffect, index: Int, v: View, radius: Float?) {
-        if (v.visibility != View.VISIBLE || v.alpha < 0.02f || v.width == 0) {
+    private fun slot(l: LensEffect, index: Int, v: View, radius: Float?, extra: Float = 1f) {
+        if (v.visibility != View.VISIBLE || v.alpha < 0.02f || v.width == 0 || extra < 0.02f) {
             l.clearSlot(index)
             return
         }
-        var a = v.alpha
+        var a = v.alpha * extra
         var p = v.parent as? View
         while (p != null && p !== root) {
             a *= p.alpha
@@ -284,19 +507,20 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateLens() {
         val l = lens ?: return
-        val dockOn = dock.visibility == View.VISIBLE
+        val dockOn = dock.visibility == View.VISIBLE && dock.alpha > 0.02f
         if (dockOn) {
-            slot(l, 0, tabBar, null)
-            slot(l, 1, if (searchBar.visibility == View.VISIBLE) searchBar else searchButton, null)
-            slot(l, 2, searchBack, null)
+            slot(l, 0, tabIndicator, null, pressP)
+            slot(l, 1, tabBar, null)
+            slot(l, 2, if (searchBar.visibility == View.VISIBLE) searchBar else searchButton, null)
+            slot(l, 3, searchBack, null)
         } else {
-            l.clearSlot(0)
-            l.clearSlot(1)
-            l.clearSlot(2)
+            for (i in 0..3) l.clearSlot(i)
         }
-        slot(l, 3, suggestions, dpf(24f))
         val top = pages.lastOrNull()
-        if (top != null) slot(l, 4, top.back, null) else l.clearSlot(4)
+        if (suggestions.visibility == View.VISIBLE) slot(l, 4, suggestions, dpf(24f))
+        else if (top != null) slot(l, 4, top.back, null)
+        else l.clearSlot(4)
+        slot(l, 5, mini, null)
 
         // content scrolled under the status bar (and a page's header) flows into a soft blur
         val night = Glass.isNight(this)
@@ -328,79 +552,273 @@ class MainActivity : AppCompatActivity() {
 
     // ================================================================ tabs
 
+    private val tabIcons = listOf(R.drawable.ic_home, R.drawable.ic_shorts, R.drawable.ic_person)
+
+    @SuppressLint("ClickableViewAccessibility")
     private fun setupTabs() {
         val labels = listOf(R.string.tab_home, R.string.tab_shorts, R.string.tab_you)
-        val icons = listOf(R.drawable.ic_home, R.drawable.ic_shorts, R.drawable.ic_person)
         Tab.values().forEachIndexed { i, t ->
             val item = LinearLayout(this)
             item.orientation = LinearLayout.VERTICAL
             item.gravity = Gravity.CENTER
             val iv = ImageView(this)
-            iv.setImageResource(icons[i])
-            item.addView(iv, LinearLayout.LayoutParams(dp(24), dp(24)))
+            iv.setImageResource(tabIcons[i])
+            item.addView(iv, LinearLayout.LayoutParams(dp(23), dp(23)))
             val tv = TextView(this)
             tv.text = getString(labels[i])
-            tv.textSize = 10.5f
+            tv.textSize = 10f
             tv.gravity = Gravity.CENTER
-            tv.setPadding(0, dp(2), 0, 0)
+            tv.setPadding(0, dp(1), 0, 0)
             item.addView(tv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             item.contentDescription = tv.text
-            item.setOnClickListener {
-                if (searchActive) collapseSearch()
-                while (pages.isNotEmpty()) popPage(animate = false)
-                if (tab == t) onTabReselected() else selectTab(t)
-            }
             tabs.addView(item, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
             tabViews.add(item)
             if (t == Tab.YOU) youIcon = iv
         }
-        tabBar.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> placeIndicator(false) }
+        tabs.setOnTouchListener { _, ev -> onTabTouch(ev) }
+        collapsedIcon.setOnClickListener { setBarCollapsed(false) }
+        dock.addOnLayoutChangeListener { _, l, _, r, _, ol, _, or, _ ->
+            if (r - l != or - ol) dock.post {
+                applyDockLayout()
+                placeIndicator(false)
+            }
+        }
         updateYouIcon()
     }
 
+    private fun fullBarWidth(): Int = (dock.width - dp(64)).coerceAtLeast(dp(56))
+    private fun tabWidth(): Float = fullBarWidth() / 3f
+    private fun indicatorWidth(): Float = tabWidth() - dpf(8f)
+
+    private fun onTabTouch(ev: MotionEvent): Boolean {
+        if (barCollapse > 0.5f) {
+            if (ev.actionMasked == MotionEvent.ACTION_UP) setBarCollapsed(false)
+            return true
+        }
+        val tw = tabWidth()
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                tabs.parent?.requestDisallowInterceptTouchEvent(true)
+                touchDownX = ev.x
+                draggingTab = false
+                animatePress(1f)
+                moveIndicatorCenter(ev.x, animate = true)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (!draggingTab && abs(ev.x - touchDownX) > ViewConfiguration.get(this).scaledTouchSlop) draggingTab = true
+                if (draggingTab) moveIndicatorCenter(ev.x, animate = false)
+            }
+            MotionEvent.ACTION_UP -> {
+                val target = Tab.values()[(ev.x / tw).toInt().coerceIn(0, 2)]
+                animatePress(0f)
+                if (searchActive) collapseSearch()
+                while (pages.isNotEmpty()) popPage(animate = false)
+                if (target == tab && !draggingTab) {
+                    placeIndicator(true)
+                    onTabReselected()
+                } else if (target == tab) {
+                    placeIndicator(true)
+                } else {
+                    selectTab(target)
+                }
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                animatePress(0f)
+                placeIndicator(true)
+            }
+        }
+        return true
+    }
+
+    private fun moveIndicatorCenter(x: Float, animate: Boolean) {
+        val iw = indicatorWidth()
+        val target = (x - iw / 2f).coerceIn(-dpf(6f), fullBarWidth() - iw + dpf(6f))
+        indicatorAnim?.cancel()
+        if (animate) {
+            indicatorAnim = ValueAnimator.ofFloat(tabIndicator.translationX, target).apply {
+                duration = 160
+                interpolator = DecelerateInterpolator()
+                addUpdateListener {
+                    tabIndicator.translationX = it.animatedValue as Float
+                    updateTabVisuals()
+                }
+                start()
+            }
+        } else {
+            tabIndicator.translationX = target
+            updateTabVisuals()
+        }
+    }
+
+    private fun animatePress(target: Float) {
+        pressAnim?.cancel()
+        pressAnim = ValueAnimator.ofFloat(pressP, target).apply {
+            duration = if (target > pressP) 220L else 420L
+            interpolator = OvershootInterpolator(if (target > pressP) 1.4f else 1.1f)
+            addUpdateListener {
+                pressP = it.animatedValue as Float
+                updateTabVisuals()
+            }
+            start()
+        }
+    }
+
+    /** Capsule size / glassiness and the tab icons under it. */
+    private fun updateTabVisuals() {
+        val p = pressP.coerceAtLeast(0f)
+        tabIndicator.scaleX = 1f + 0.16f * p
+        tabIndicator.scaleY = 1f + 0.42f * p
+        indicatorFrost?.alpha = (255 * (1f - p).coerceIn(0f, 1f)).toInt()
+        indicatorGlass?.alpha = (255 * p.coerceIn(0f, 1f)).toInt()
+        val tw = tabWidth()
+        val center = tabIndicator.translationX + indicatorWidth() / 2f
+        val text = Glass.textColor(this)
+        val accent = ContextCompat.getColor(this, R.color.accent)
+        tabViews.forEachIndexed { i, v ->
+            val tc = tw * i + tw / 2f
+            val near = (1f - abs(tc - center) / tw).coerceIn(0f, 1f)
+            val s = 1f + 0.16f * p.coerceIn(0f, 1.2f) * near
+            v.scaleX = s
+            v.scaleY = s
+            val active = if (p > 0.05f) near > 0.5f else i == tab.ordinal
+            val col = if (active) accent else text
+            val iv = v.getChildAt(0) as ImageView
+            if (!(i == Tab.YOU.ordinal && Account.isSignedIn(this) && Account.photo(this) != null)) iv.setColorFilter(col)
+            (v.getChildAt(1) as TextView).setTextColor(col)
+        }
+        // the bar's frost gets a hole under the clear glass capsule
+        if (p > 0.25f) {
+            val w = tabIndicator.width
+            val h = tabIndicator.height
+            val sx = tabIndicator.scaleX
+            val sy = tabIndicator.scaleY
+            val l = tabIndicator.left + tabIndicator.translationX + w * (1f - sx) / 2f
+            val t = tabIndicator.top + h * (1f - sy) / 2f
+            tmp.set(l, t, l + w * sx, t + h * sy)
+            tabBarBg?.setHole(tmp, tmp.height() / 2f)
+        } else {
+            tabBarBg?.setHole(null, 0f)
+        }
+        root.invalidate()
+    }
+
     private fun placeIndicator(animate: Boolean) {
-        val w = tabBar.width
-        if (w == 0) return
-        val tabW = w / 3f
+        if (dock.width == 0) return
+        val tw = tabWidth()
         val lp = tabIndicator.layoutParams
-        val iw = (tabW - dp(8)).toInt()
+        val iw = indicatorWidth().toInt()
         if (lp.width != iw) {
             lp.width = iw
             tabIndicator.layoutParams = lp
         }
-        val x = tabW * tab.ordinal + dp(4)
+        val x = tw * tab.ordinal + dpf(4f)
+        indicatorAnim?.cancel()
         if (animate) {
-            tabIndicator.animate().translationX(x).setDuration(420L)
-                .setInterpolator(OvershootInterpolator(1.3f))
-                .setUpdateListener { root.invalidate() }.start()
-            // a little squash while it travels, like a drop of glass
-            tabIndicator.scaleX = 1.12f
-            tabIndicator.animate().scaleX(1f).setDuration(420L).start()
+            indicatorAnim = ValueAnimator.ofFloat(tabIndicator.translationX, x).apply {
+                duration = 420L
+                interpolator = OvershootInterpolator(1.3f)
+                addUpdateListener {
+                    tabIndicator.translationX = it.animatedValue as Float
+                    updateTabVisuals()
+                }
+                start()
+            }
         } else {
             tabIndicator.translationX = x
+            updateTabVisuals()
         }
+    }
+
+    // ---- collapsing on scroll
+
+    private fun setBarCollapsed(collapsed: Boolean) {
+        val target = if (collapsed) 1f else 0f
+        if (collapseTarget == target && (collapseAnim?.isRunning == true || barCollapse == target)) return
+        collapseTarget = target
+        collapseAnim?.cancel()
+        collapseAnim = ValueAnimator.ofFloat(barCollapse, target).apply {
+            duration = 420L
+            interpolator = OvershootInterpolator(0.9f)
+            addUpdateListener {
+                barCollapse = it.animatedValue as Float
+                applyDockLayout()
+            }
+            start()
+        }
+    }
+
+    private fun applyDockLayout() {
+        if (dock.width == 0) return
+        val full = fullBarWidth()
+        val small = dp(56)
+        val c = barCollapse
+        val w = (full + (small - full) * c).toInt().coerceAtLeast(small / 2)
+        val lp = tabBar.layoutParams
+        if (lp.width != w) {
+            lp.width = w
+            tabBar.layoutParams = lp
+        }
+        val tl = tabs.layoutParams
+        if (tl.width != full) {
+            tl.width = full
+            tabs.layoutParams = tl
+        }
+        tabs.clipBounds = Rect(0, 0, w, dock.height)
+        val fade = (1f - c * 1.8f).coerceIn(0f, 1f)
+        tabs.alpha = fade
+        tabIndicator.alpha = fade
+        collapsedIcon.alpha = ((c - 0.45f) / 0.55f).coerceIn(0f, 1f)
+        collapsedIcon.visibility = if (c > 0.3f) View.VISIBLE else View.GONE
+        placeMini()
+        root.invalidate()
     }
 
     private fun selectTab(t: Tab, animate: Boolean = true) {
         val old = tab
         tab = t
-        val text = Glass.textColor(this)
-        val accent = ContextCompat.getColor(this, R.color.accent)
-        tabViews.forEachIndexed { i, v ->
-            val selected = i == t.ordinal
-            val col = if (selected) accent else text
-            val iv = v.getChildAt(0) as ImageView
-            if (!(i == Tab.YOU.ordinal && Account.photo(this) != null && Account.isSignedIn(this))) iv.setColorFilter(col)
-            (v.getChildAt(1) as TextView).setTextColor(col)
-        }
         placeIndicator(animate)
+        collapsedIcon.setImageResource(tabIcons[t.ordinal])
+        collapsedIcon.setColorFilter(ContextCompat.getColor(this, R.color.accent))
         if (old == Tab.SHORTS && t != Tab.SHORTS) shorts.onHidden()
+        val from = listFor(old)
         showContent()
+        if (animate && old != t && pages.isEmpty() && !searchActive) crossfade(from, listFor(t), if (t.ordinal > old.ordinal) 1 else -1)
         if (t == Tab.SHORTS) {
             shorts.setQueries(history.all().take(4))
-            shorts.onShown()
+            if (sheetProgress < 0.5f) shorts.onShown()
         }
         if (t == Tab.YOU) buildYou()
+        setBarCollapsed(false)
+        updateTabVisuals()
+    }
+
+    private fun listFor(t: Tab): View = when (t) {
+        Tab.HOME -> homeList
+        Tab.SHORTS -> shortsList
+        Tab.YOU -> youList
+    }
+
+    /** Page switch: the old page slides and fades out, the new one in. */
+    private fun crossfade(from: View, to: View, dir: Int) {
+        val shift = dpf(36f) * dir
+        from.animate().cancel()
+        to.animate().cancel()
+        from.visibility = View.VISIBLE
+        from.alpha = 1f
+        from.translationX = 0f
+        from.animate().alpha(0f).translationX(-shift).setDuration(200)
+            .setInterpolator(DecelerateInterpolator())
+            .withEndAction {
+                from.translationX = 0f
+                from.alpha = 1f
+                showContent()
+            }.start()
+        to.alpha = 0f
+        to.translationX = shift
+        to.animate().alpha(1f).translationX(0f).setDuration(300).setStartDelay(60)
+            .setInterpolator(DecelerateInterpolator(1.6f))
+            .setUpdateListener { root.invalidate() }
+            .start()
     }
 
     private fun onTabReselected() {
@@ -420,11 +838,7 @@ class MainActivity : AppCompatActivity() {
         youList.visibility = if (!pageOn && !searchActive && tab == Tab.YOU) View.VISIBLE else View.GONE
         shortsList.visibility = if (!searchActive && tab == Tab.SHORTS) View.VISIBLE else View.GONE
         searchList.visibility = if (!pageOn && searchActive) View.VISIBLE else View.GONE
-        val dark = (tab == Tab.SHORTS && !searchActive && !pageOn) || Glass.isNight(this)
-        WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = !dark
-            isAppearanceLightNavigationBars = !dark
-        }
+        applyBars()
         root.invalidate()
     }
 
@@ -456,23 +870,40 @@ class MainActivity : AppCompatActivity() {
             dockLp.bottomMargin = bottom + dp(12)
             dock.layoutParams = dockLp
             val sugLp = suggestions.layoutParams as FrameLayout.LayoutParams
-            sugLp.bottomMargin = bottom + dp(12) + dp(62) + dp(10)
+            sugLp.bottomMargin = bottom + dp(12) + dp(56) + dp(10)
             suggestions.layoutParams = sugLp
-            val listBottom = sys.bottom + dp(62) + dp(36)
-            for (rv in listOf(homeList, youList, searchList)) rv.setPadding(0, sys.top, 0, listBottom)
+            applyListPadding()
             pages.forEach { it.applyInsets() }
+            placeMini()
+            if (::sheet.isInitialized) root.post { sheet.applyGeometry() }
             insets
         }
+    }
+
+    private fun applyListPadding() {
+        val listBottom = navBottom + dp(56) + dp(36) + if (miniShown) dp(64) else 0
+        for (rv in listOf(homeList, youList, searchList)) rv.setPadding(0, statusTop, 0, listBottom)
+    }
+
+    private fun collapseOnScroll(rv: RecyclerView, dy: Int) {
+        if (searchActive || pressP > 0.05f) return
+        if (rv.computeVerticalScrollOffset() <= 0) setBarCollapsed(false)
+        else if (dy > dp(4)) setBarCollapsed(true)
+        else if (dy < -dp(4)) setBarCollapsed(false)
     }
 
     private fun setupScrolling() {
         homeList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+                collapseOnScroll(rv, dy)
                 val lm = rv.layoutManager as LinearLayoutManager
                 if (lm.findLastVisibleItemPosition() >= homeAdapter.itemCount - 4 &&
                     homeAdapter.items.lastOrNull() == Row.Loading
                 ) loadMoreHome()
             }
+        })
+        youList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) = collapseOnScroll(rv, dy)
         })
         searchList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(rv: RecyclerView, newState: Int) {
@@ -758,7 +1189,7 @@ class MainActivity : AppCompatActivity() {
 
         fun applyInsets() {
             header.setPadding(header.paddingLeft, statusTop + dp(6), header.paddingRight, dp(6))
-            list.setPadding(0, statusTop + dp(62), 0, navBottom + dp(62) + dp(36))
+            list.setPadding(0, statusTop + dp(62), 0, navBottom + dp(56) + dp(36) + if (miniShown) dp(64) else 0)
         }
 
         fun loadFeed(id: String) {
@@ -897,7 +1328,10 @@ class MainActivity : AppCompatActivity() {
                 R.drawable.ic_hdr, getString(R.string.hdr),
                 getString(if (hdrOk) R.string.hdr_sub else R.string.hdr_unsupported),
                 settings.hdr && hdrOk, hdrOk
-            ) { settings.hdr = it }
+            ) {
+                settings.hdr = it
+                sheet.onSettingsChanged()
+            }
         )
 
         rows.add(Row.Section(getString(R.string.account)))
@@ -992,8 +1426,8 @@ class MainActivity : AppCompatActivity() {
         }
         searchActive = true
         if (tab == Tab.SHORTS) shorts.onHidden()
-        val full = dock.width - dp(72)
-        val small = dp(62)
+        val full = dock.width - dp(64)
+        val small = dp(56)
         searchAnim?.cancel()
         searchBar.visibility = View.VISIBLE
         searchButton.visibility = View.INVISIBLE
@@ -1018,6 +1452,7 @@ class MainActivity : AppCompatActivity() {
             .setInterpolator(OvershootInterpolator(1.6f)).start()
         showSearchIdle()
         showContent()
+        placeMini()
         if (focus) {
             field.requestFocus()
             showKeyboard()
@@ -1033,7 +1468,7 @@ class MainActivity : AppCompatActivity() {
         currentQuery = null
         field.setText("")
         val full = searchBar.width
-        val small = dp(62)
+        val small = dp(56)
         searchAnim?.cancel()
         searchAnim = ValueAnimator.ofInt(full, small).apply {
             duration = 300L
@@ -1056,7 +1491,10 @@ class MainActivity : AppCompatActivity() {
         searchBack.animate().alpha(0f).scaleX(0.4f).scaleY(0.4f).setStartDelay(0).setDuration(180L)
             .withEndAction { if (!searchActive) searchBack.visibility = View.INVISIBLE }.start()
         showContent()
-        if (tab == Tab.SHORTS) shorts.onShown()
+        barCollapse = 0f
+        collapseTarget = 0f
+        applyDockLayout()
+        if (tab == Tab.SHORTS && sheetProgress < 0.5f) shorts.onShown()
     }
 
     private fun leaveField() {
@@ -1261,6 +1699,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openVideo(v: Video) {
-        startActivity(Intent(this, PlayerActivity::class.java).putExtra(PlayerActivity.EXTRA_URL, v.url))
+        shorts.onHidden()
+        sheet.open(v.url)
     }
 }

@@ -75,4 +75,5 @@
     <string name="on">Be</string>
     <string name="off">Ki</string>
     <string name="speed">Sebesség</string>
+    <string name="close">Bezárás</string>
 </resources>

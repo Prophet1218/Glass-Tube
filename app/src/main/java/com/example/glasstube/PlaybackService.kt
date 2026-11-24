@@ -128,7 +128,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     private fun openPlayerIntent(url: String): PendingIntent {
-        val intent = Intent(this, PlayerActivity::class.java)
+        val intent = Intent(this, MainActivity::class.java)
             .putExtra(PlayerActivity.EXTRA_URL, url)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
         return PendingIntent.getActivity(

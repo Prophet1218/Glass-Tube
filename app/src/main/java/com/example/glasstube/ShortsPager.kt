@@ -52,7 +52,8 @@ class ShortsPager(
     private val activity: AppCompatActivity,
     private val list: RecyclerView,
     /** Space to keep free at the bottom (dock + navigation bar). */
-    private val bottomInset: () -> Int
+    private val bottomInset: () -> Int,
+    private val onOpenVideo: (Video) -> Unit
 ) {
     private val ctx = activity
     private val yt = ServiceList.YouTube
@@ -272,9 +273,7 @@ class ShortsPager(
 
     private fun openFull(v: Video) {
         player?.pause()
-        ctx.startActivity(
-            Intent(ctx, PlayerActivity::class.java).putExtra(PlayerActivity.EXTRA_URL, v.url)
-        )
+        onOpenVideo(v)
     }
 
     private inner class Adapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
