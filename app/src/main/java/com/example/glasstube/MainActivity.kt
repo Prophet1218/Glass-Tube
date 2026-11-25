@@ -52,6 +52,7 @@ import coil.transform.CircleCropTransformation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -1078,7 +1079,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     private suspend fun localSubscriptionFeed(): List<Video> = withContext(Dispatchers.IO) {
         val subs = Subscriptions(this@MainActivity).all().take(15)
         val jobs = subs.map { c ->
-            kotlinx.coroutines.async {
+            async {
                 try {
                     val info = org.schabi.newpipe.extractor.channel.ChannelInfo.getInfo(yt, c.url)
                     val tab = info.tabs.firstOrNull { it.contentFilters.contains(org.schabi.newpipe.extractor.channel.tabs.ChannelTabs.VIDEOS) }
