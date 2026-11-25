@@ -1923,8 +1923,8 @@ class PlayerSheet(
 
     private inner class ChapterHolder(v: View) : RecyclerView.ViewHolder(v) {
         val thumb: ImageView = (v as ViewGroup).getChildAt(0) as ImageView
-        val title: TextView = ((v.getChildAt(1) as ViewGroup).getChildAt(0)) as TextView
-        val time: TextView = ((v.getChildAt(1) as ViewGroup).getChildAt(1)) as TextView
+        val title: TextView = (((v as ViewGroup).getChildAt(1) as ViewGroup).getChildAt(0)) as TextView
+        val time: TextView = (((v as ViewGroup).getChildAt(1) as ViewGroup).getChildAt(1)) as TextView
     }
 
     /** A storyboard frame at [pos], or null (then the sheet is loaded and [loaded] is called). */
