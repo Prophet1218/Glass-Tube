@@ -95,6 +95,7 @@ class TopTabs(context: Context, labels: List<String>, lensOn: Boolean) : FrameLa
             row.addView(t, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
         }
         addView(row, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        indicator.bringToFront()
         indicator.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (!layingOut) layoutCapsule() }
     }
 
@@ -204,9 +205,11 @@ class TopTabs(context: Context, labels: List<String>, lensOn: Boolean) : FrameLa
         texts.forEachIndexed { i, t ->
             val near = if (tw > 0f) (1f - abs(center(i) - capX) / tw).coerceIn(0f, 1f) else if (i == selected) 1f else 0f
             t.setTextColor(ColorUtils.blendARGB(dim, text, near))
-            val s = 1f + 0.1f * p.coerceIn(0f, 1.2f) * near
-            t.scaleX = s
-            t.scaleY = s
+            // magnified through the pressed glass, which runs in front of the labels
+            val mag = 0.18f * p.coerceIn(0f, 1.2f) * near
+            t.scaleX = 1f + mag
+            t.scaleY = 1f + mag
+            t.translationX = (center(i) - capX) * mag
             t.setShadowLayer(if (night) dpf(6f) * near else 0f, 0f, 0f, Color.argb((150 * near).toInt(), 255, 255, 255))
         }
         if (p > 0.01f) bg.setHole(capRect, capRect.height() / 2f, p.coerceIn(0f, 1f)) else bg.setHole(null, 0f)

@@ -1,3 +1,3 @@
-## Glass Tube 1.3.2
+## Glass Tube 1.3.3
 
-- Back buttons: the liquid glass edge is back, but the refraction now stays in a thin band at the rim, so the arrow inside is no longer bent and smeared; it stays sharp
+- Bottom bar and the tabs at the top: the capsule now runs in front of the icons and labels, and while it's pressed they are magnified through it like the rest of the picture under the glass
