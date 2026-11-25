@@ -39,6 +39,15 @@ class LensEffect(private val target: View) {
     /** Domború (3D) üveg: a fény- és árnyékhatás erőssége (0 = ki), és a peremi nagyítás (0 = nincs). */
     private var convex = 0f
     private var convexRefr = 0f
+    /** Slot 0 as a thick magnifying lens (the pressed tab capsule), 0..1. */
+    private var lens0 = 0f
+
+    fun setSlot0Lens(amount: Float) {
+        if (lens0 != amount) {
+            lens0 = amount
+            dirty = true
+        }
+    }
     /** Az állapotsor mögötti térköz egyszínű kitöltése (alfa 0 = az első sor nyújtása). */
     private val padColor = floatArrayOf(0f, 0f, 0f, 0f)
 
@@ -197,6 +206,7 @@ class LensEffect(private val target: View) {
         shader.setFloatUniform("rimWidth", rimWidth)
         shader.setFloatUniform("convex", convex)
         shader.setFloatUniform("convexRefr", convexRefr)
+        shader.setFloatUniform("lens0", lens0)
         val main = RenderEffect.createRuntimeShaderEffect(shader, "content")
         if (flowH > 0f && flowBlur >= 1f) {
             val mask = flowMask ?: RuntimeShader(MASK_SRC).also { flowMask = it }
@@ -292,6 +302,7 @@ uniform vec4 rimColor;
 uniform float rimWidth;
 uniform float convex;
 uniform float convexRefr;
+uniform float lens0;
 
 float sdRound(vec2 p, vec2 hs, float r) {
     vec2 q = abs(p) - hs + vec2(r);
@@ -335,7 +346,7 @@ vec4 blurAt(vec2 c, float r) {
     return s / wsum;
 }
 
-vec4 glass(vec2 c, vec4 rect, float radius, float d, float blur, float strength) {
+vec4 glass(vec2 c, vec4 rect, float radius, float d, float blur, float strength, float lensAmt) {
     vec2 center = (rect.xy + rect.zw) * 0.5;
     vec2 hs = (rect.zw - rect.xy) * 0.5;
     vec2 p = c - center;
@@ -356,14 +367,21 @@ vec4 glass(vec2 c, vec4 rect, float radius, float d, float blur, float strength)
     float bev = max(min(radius, min(hs.x, hs.y)), 1.0);
     float u = clamp(1.0 + d / bev, 0.0, 1.0);
     float tilt = u * u;
-    if (convex > 0.0 && convexRefr > 0.0) {
+    float cv = max(convex, lensAmt);
+    float cr = max(convexRefr, lensAmt);
+    if (cr > 0.0) {
         // vastag lencse: a szélek felé erősebben húzza befelé a képet, középen enyhén nagyít
-        off += (n * (tilt * u) * (bev * 0.32) + p * 0.045) * convexRefr;
+        off += (n * (tilt * u) * (bev * 0.32) + p * 0.045) * cr;
     }
+    if (lensAmt > 0.0) {
+        // magnifying drop: the middle is enlarged, the rim bends the picture strongly
+        off += (p * 0.12 + n * (tilt * tilt) * (bev * 0.35)) * lensAmt;
+    }
+    float disp = max(dispersion, 0.08 * lensAmt);
     vec4 col = blurAt(c - off, blur);
-    if (dispersion > 0.0 && dot(off, off) > 0.0) {
-        col.r = blurAt(c - off * (1.0 + dispersion), blur).r;
-        col.b = blurAt(c - off * (1.0 - dispersion), blur).b;
+    if (disp > 0.0 && dot(off, off) > 0.0) {
+        col.r = blurAt(c - off * (1.0 + disp), blur).r;
+        col.b = blurAt(c - off * (1.0 - disp), blur).b;
     }
     if (rimColor.a > 0.0) {
         col.rgb = col.rgb + (vec3(1.0) - col.rgb) * (0.07 * rimColor.a);
@@ -371,7 +389,7 @@ vec4 glass(vec2 c, vec4 rect, float radius, float d, float blur, float strength)
         float a = e * e * rimColor.a;
         col.rgb = col.rgb * (1.0 - a) + rimColor.rgb * a;
     }
-    if (convex > 0.0) {
+    if (cv > 0.0) {
         // fény balról fölülről: a bal felső belső peremen csillanás, a jobb alsón enyhe árnyék
         float facing = dot(n, vec2(-0.55, -0.835));
         float lit = max(facing, 0.0);
@@ -385,12 +403,12 @@ vec4 glass(vec2 c, vec4 rect, float radius, float d, float blur, float strength)
         float sheen = (1.0 - smoothstep(0.0, 0.55, yN)) * (1.0 - u) * 0.07;
         // belső árnyék a jobb alsó perem felé (az üveg vastagsága)
         float shade = u2 * u * away * 0.16;
-        col.rgb = col.rgb * (1.0 - shade * convex);
-        col.rgb = col.rgb + (vec3(1.0) - col.rgb) * ((spec + sheen) * convex);
+        col.rgb = col.rgb * (1.0 - shade * cv);
+        col.rgb = col.rgb + (vec3(1.0) - col.rgb) * ((spec + sheen) * cv);
         // vékony, fényes perem (a szemközti, jobb alsó oldalon is átüt a fény)
         float rw = clamp(bev * 0.07, 1.0, 3.2);
         float rimE = 1.0 - smoothstep(0.0, rw, -d);
-        float rimA = rimE * (0.16 + 0.42 * lit + 0.20 * away) * convex;
+        float rimA = rimE * (0.16 + 0.42 * lit + 0.20 * away) * cv;
         col.rgb = col.rgb + (vec3(1.0) - col.rgb) * rimA;
         col.rgb = clamp(col.rgb, 0.0, 1.0);
     }
@@ -407,37 +425,37 @@ half4 main(vec2 c) {
     if (g0.z > g0.x) {
         float d0 = sdRect(c, g0, p0.x);
         if (d0 < 0.0) {
-            return half4(glass(c, g0, p0.x, d0, p0.y, p0.z));
+            return half4(glass(c, g0, p0.x, d0, p0.y, p0.z, lens0));
         }
     }
     if (g1.z > g1.x) {
         float d1 = sdRect(c, g1, p1.x);
         if (d1 < 0.0) {
-            return half4(glass(c, g1, p1.x, d1, p1.y, p1.z));
+            return half4(glass(c, g1, p1.x, d1, p1.y, p1.z, 0.0));
         }
     }
     if (g2.z > g2.x) {
         float d2 = sdRect(c, g2, p2.x);
         if (d2 < 0.0) {
-            return half4(glass(c, g2, p2.x, d2, p2.y, p2.z));
+            return half4(glass(c, g2, p2.x, d2, p2.y, p2.z, 0.0));
         }
     }
     if (g3.z > g3.x) {
         float d3 = sdRect(c, g3, p3.x);
         if (d3 < 0.0) {
-            return half4(glass(c, g3, p3.x, d3, p3.y, p3.z));
+            return half4(glass(c, g3, p3.x, d3, p3.y, p3.z, 0.0));
         }
     }
     if (g4.z > g4.x) {
         float d4 = sdRect(c, g4, p4.x);
         if (d4 < 0.0) {
-            return half4(glass(c, g4, p4.x, d4, p4.y, p4.z));
+            return half4(glass(c, g4, p4.x, d4, p4.y, p4.z, 0.0));
         }
     }
     if (g5.z > g5.x) {
         float d5 = sdRect(c, g5, p5.x);
         if (d5 < 0.0) {
-            return half4(glass(c, g5, p5.x, d5, p5.y, p5.z));
+            return half4(glass(c, g5, p5.x, d5, p5.y, p5.z, 0.0));
         }
     }
     if (topH > 0.0 && c.y < topH + topExt) {

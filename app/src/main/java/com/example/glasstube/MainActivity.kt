@@ -532,7 +532,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         }
         val glass = GlassSkinDrawable(density).apply {
             cornerRadius = null
-            setTint(0.35f, null)
+            setTint(0.12f, null)
             setRim(true)
             setContentColor(if (night) Color.WHITE else Color.argb(200, 255, 255, 255))
             alpha = 0
@@ -577,9 +577,15 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         val l = lens ?: return
         val dockOn = dock.visibility == View.VISIBLE && dock.alpha > 0.02f
         if (dockOn) {
-            // the pressed capsule is clear glass through a hole in the bar's frost; it doesn't get
-            // a lens of its own (a lens inside the bar's lens refracted its own rim twice)
-            l.clearSlot(0)
+            // the pressed capsule is a magnifying drop of glass, through a hole in the bar's frost
+            if (pressP > 0.02f && tabIndicator.width > 0) {
+                l.setSlot0Lens(1f)
+                rectOf(tabIndicator, tmp)
+                l.setSlot(0, tmp.left, tmp.top, tmp.right, tmp.bottom, tmp.height() / 2f, 0f,
+                    (pressP * 1.6f).coerceIn(0f, 1f) * dock.alpha)
+            } else {
+                l.clearSlot(0)
+            }
             slot(l, 1, tabBar, null)
             slot(l, 2, if (searchBar.visibility == View.VISIBLE) searchBar else searchButton, null)
             slot(l, 3, searchBack, null)
@@ -804,13 +810,15 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         val barW = fullBarWidth()
         if (iw > 0f && ih > 0f) {
             // pressed: a bit bigger; moving fast: longer and a little flatter
-            val wf = 1f + 0.1f * p + 0.16f * stretch
-            val hf = (1f + 0.19f * p - 0.1f * stretch).coerceAtMost(1.2f)
+            // it grows a little past the bar, like a drop of glass lifted off it
+            val wf = 1f + 0.2f * p + 0.16f * stretch
+            val hf = (1f + 0.34f * p - 0.1f * stretch).coerceAtMost(1.4f)
             var l = capX - iw * wf / 2f
             var r = capX + iw * wf / 2f
             // against the ends of the bar it squashes instead of poking out
-            val minL = dpf(2.5f)
-            val maxR = barW - dpf(2.5f)
+            val out = dpf(2.5f) - dpf(7f) * p.coerceIn(0f, 1f)
+            val minL = out
+            val maxR = barW - out
             if (l < minL) l = minL
             if (r > maxR) r = maxR
             if (r - l < iw * 0.8f) r = l + iw * 0.8f
