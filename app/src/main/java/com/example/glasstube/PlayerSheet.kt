@@ -467,12 +467,35 @@ class PlayerSheet(
     private val loc = IntArray(2)
     private val loc2 = IntArray(2)
 
+    /** Position of [v] inside [ancestor] in the ancestor's own (unscaled) units. */
+    private fun offsetIn(v: View, ancestor: View, out: FloatArray) {
+        var x = 0f
+        var y = 0f
+        var cur: View? = v
+        while (cur != null && cur !== ancestor) {
+            x += cur.left + cur.translationX
+            y += cur.top + cur.translationY
+            cur = cur.parent as? View
+        }
+        out[0] = x
+        out[1] = y
+    }
+
+    private val offA = FloatArray(2)
+    private val offB = FloatArray(2)
+
+    /**
+     * The button's rect in the player view's own coordinates. Measured inside the video box, so a
+     * scale on the box (the springy grow when turning to fullscreen) can't shift the glass away
+     * from the button: on screen positions the scale would be counted twice.
+     */
     private fun lensRect(v: View) {
         val pv = playerView ?: return
-        pv.getLocationInWindow(loc2)
-        v.getLocationInWindow(loc)
-        val left = (loc[0] - loc2[0]).toFloat()
-        val top = (loc[1] - loc2[1]).toFloat()
+        offsetIn(pv, videoBox, offA)
+        offsetIn(v, videoBox, offB)
+        // a button scaled around its centre (the pop-in) is drawn shifted from its layout place
+        val left = offB[0] - offA[0] + v.pivotX * (1f - v.scaleX)
+        val top = offB[1] - offA[1] + v.pivotY * (1f - v.scaleY)
         tmp.set(left, top, left + v.width * v.scaleX, top + v.height * v.scaleY)
     }
 
@@ -2274,7 +2297,7 @@ class PlayerSheet(
         lens?.clear()
         view.postDelayed({
             if (isOpen && progress >= 0.999f && !pip && wasShown) showControls(autoHide = isPlaying)
-        }, 520)
+        }, 300)
     }
 
     private fun enterFullscreen(rotate: Boolean) {
