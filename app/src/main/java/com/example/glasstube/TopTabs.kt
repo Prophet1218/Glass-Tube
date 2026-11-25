@@ -102,7 +102,6 @@ class TopTabs(context: Context, labels: List<String>, private val lensOn: Boolea
             row.addView(t, LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f))
         }
         addView(row, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        indicator.bringToFront()
         indicator.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (!layingOut) layoutCapsule() }
     }
 

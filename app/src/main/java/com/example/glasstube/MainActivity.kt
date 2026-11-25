@@ -709,9 +709,8 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             if (t == Tab.YOU) youIcon = iv
         }
         tabs.setOnTouchListener { _, ev -> onTabTouch(ev) }
-        // the capsule runs in front of the icons (it doesn't take touches, so they reach the tabs)
-        tabIndicator.bringToFront()
-        collapsedIcon.bringToFront()
+        // at rest the frosted capsule stays behind the icons; while pressed the icons are drawn
+        // through the glass by the ghost layer above the bar
         // a layout pass of the bar puts the capsule back to its xml size: re-apply ours in the
         // same frame (posting it would show the wrong size for one frame: the capsule jumped)
         tabIndicator.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
