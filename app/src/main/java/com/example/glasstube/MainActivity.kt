@@ -924,7 +924,8 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             tabGhost[i] = g
             iv.alpha = 1f
             GhostLayer.cutUnder(iv, capWin, g > 0f)
-            GhostLayer.cutUnder(halo, capWin, g > 0f)
+            // the glow is soft: never cut it (a straight cut through it showed as a hard edge)
+            if (halo.clipBounds != null) halo.clipBounds = null
             if (!(i == Tab.YOU.ordinal && avatarTab)) {
                 iv.setColorFilter(col)
                 halo.setColorFilter(glowColor)

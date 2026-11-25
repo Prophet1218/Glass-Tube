@@ -1,3 +1,3 @@
-## Glass Tube 1.3.9
+## Glass Tube 1.3.10
 
-- Icons under the pressed capsule are now drawn cleanly through the glass: cut exactly to the capsule's shape (its rim stays visible) and slightly magnified around its centre, with the real icon cut away under it. They no longer melt into white blobs at the capsule's edge, and there are no doubled images
+- The soft glow around the tab icons is no longer cut off with a hard edge where the pressed capsule covers it
