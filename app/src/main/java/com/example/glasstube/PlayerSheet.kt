@@ -556,7 +556,11 @@ class PlayerSheet(
             lp.topMargin = t.toInt()
             videoBox.layoutParams = lp
         }
-        corner = lerp(dpf(9f), 0f, f)
+        // in the mini player the video's corners follow the pill around it (concentric), and
+        // they straighten out smoothly while it grows into the full player
+        val miniCorner = miniRect.height() / 2f
+        val e = 1f - (1f - f) * (1f - f)
+        corner = lerp(miniCorner, 0f, e).coerceAtMost(nhF / 2f)
         videoBox.invalidateOutline()
 
         val shown = f > 0.001f

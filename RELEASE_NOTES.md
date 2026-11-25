@@ -1,4 +1,5 @@
-## Glass Tube 0.8.0
+## Glass Tube 0.8.1
 
-- Smooth release for the tab bar capsule: as it shrinks back, the refraction relaxes and the frosted bar fades back in underneath, with no moment of sharp, unblurred picture
-- New switch in Settings → Appearance: Colour fringing. It turns the rainbow edges on or off on every liquid glass surface (tab bar, search, capsule, player buttons and menu)
+- Colour fringing is now off by default (Settings → Appearance → Colour fringing)
+- The tab bar capsule no longer jitters while the bar shrinks or grows back when scrolling
+- The video in the mini player has corners that follow the rounded mini player, and they straighten out smoothly as it grows into the full player

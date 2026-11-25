@@ -93,7 +93,7 @@ class Settings(ctx: Context) {
 
     /** Colour fringing (dispersion) at the edges of the liquid glass. */
     var dispersion: Boolean
-        get() = bool("dispersion", true)
+        get() = bool("dispersion", false)
         set(v) = put("dispersion", v)
 
     // ---- history

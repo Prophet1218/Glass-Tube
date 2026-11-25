@@ -504,6 +504,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         }
         applySkins()
         root.viewTreeObserver.addOnPreDrawListener {
+            if (dock.width > 0) layoutCapsule()
             updateLens()
             true
         }
@@ -665,9 +666,10 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             if (t == Tab.YOU) youIcon = iv
         }
         tabs.setOnTouchListener { _, ev -> onTabTouch(ev) }
-        // a layout pass of the bar puts the capsule back to its xml size: re-apply ours
+        // a layout pass of the bar puts the capsule back to its xml size: re-apply ours in the
+        // same frame (posting it would show the wrong size for one frame: the capsule jumped)
         tabIndicator.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            if (!capLayout) tabIndicator.post { updateTabVisuals() }
+            if (!capLayout) layoutCapsule()
         }
         collapsedIcon.setOnClickListener { setBarCollapsed(false) }
         dock.addOnLayoutChangeListener { _, l, _, r, _, ol, _, or, _ ->
@@ -805,8 +807,9 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         return true
     }
 
-    /** Capsule size / glassiness and the tab icons under it. */
-    private fun updateTabVisuals() {
+    /** Puts the capsule where the spring says; also run before every frame is drawn, because a
+     *  layout pass of the bar (e.g. while it collapses) would put it back to its xml place. */
+    private fun layoutCapsule() {
         val p = pressP.coerceAtLeast(0f)
         val iw = indicatorWidth()
         val ih = dpf(46f)
@@ -837,6 +840,12 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             tabIndicator.layout(Math.round(l), Math.round(cy - hh), Math.round(r), Math.round(cy + hh))
             capLayout = false
         }
+    }
+
+    /** Capsule size / glassiness and the tab icons under it. */
+    private fun updateTabVisuals() {
+        val p = pressP.coerceAtLeast(0f)
+        layoutCapsule()
         val center = capX
         indicatorFrost?.alpha = (255 * (1f - p).coerceIn(0f, 1f)).toInt()
         indicatorGlass?.alpha = (255 * p.coerceIn(0f, 1f)).toInt()

@@ -24,7 +24,7 @@ object Glass {
     var reduceTransparency = false
 
     /** Colour fringing at the edges of every liquid glass surface. */
-    var dispersion = true
+    var dispersion = false
 
     fun lensSupported(): Boolean = Build.VERSION.SDK_INT >= 33 && !reduceTransparency
 
