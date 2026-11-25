@@ -204,6 +204,9 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     // home
     private var homeChip = 0
     private lateinit var topTabs: TopTabs
+    /** Copies of the tab icons inside the refracted content (seen through the pressed capsule). */
+    private lateinit var ghosts: GhostLayer
+    private val tabGhost = FloatArray(3)
     /** "Glass Tube" + the tabs: attached to the top of the home page, scrolls away and comes back. */
     private lateinit var homeHeaderView: LinearLayout
     private var headerShift = 0f
@@ -285,6 +288,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
 
         setupGlass()
         setupTabs()
+        if (lensOn) setupGhosts()
         setupMini()
         setupSearch()
         setupInsets()
@@ -910,12 +914,16 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             val col = ColorUtils.blendARGB(dim, glowColor, glow)
             val iv = tabIconViews[i]
             val halo = tabHalos[i]
+            // under the pressed glass the icon is shown by its copy inside the refracted picture
+            val g = if (lensOn) near * (p * 1.6f).coerceIn(0f, 1f) else 0f
+            tabGhost[i] = g
+            iv.alpha = 1f - g
             if (!(i == Tab.YOU.ordinal && avatarTab)) {
                 iv.setColorFilter(col)
                 halo.setColorFilter(glowColor)
-                halo.alpha = glow * (if (night) 0.95f else 0.45f)
+                halo.alpha = glow * (if (night) 0.95f else 0.45f) * (1f - g)
             } else {
-                halo.alpha = glow * 0.8f
+                halo.alpha = glow * 0.8f * (1f - g)
             }
             halo.scaleX = 1.12f
             halo.scaleY = 1.12f
@@ -926,6 +934,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         } else {
             tabBarBg?.setHole(null, 0f)
         }
+        if (::ghosts.isInitialized) ghosts.invalidate()
         root.invalidate()
     }
 
@@ -1246,10 +1255,20 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
 
     // ---- tabs at the top of the home page
 
+    private fun setupGhosts() {
+        ghosts = GhostLayer(this)
+        content.addView(ghosts, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        tabIconViews.forEachIndexed { i, iv -> ghosts.sources.add(GhostLayer.Source(iv) { tabGhost[i] }) }
+        topTabs.labelViews.forEachIndexed { i, t -> ghosts.sources.add(GhostLayer.Source(t) { topTabs.ghostAlpha(i) }) }
+    }
+
     private fun setupTopTabs() {
         val labels = listOf(R.string.top_home, R.string.top_subs, R.string.top_live).map { getString(it) }
         topTabs = TopTabs(this, labels, lensOn)
-        topTabs.onFrame = { root.invalidate() }
+        topTabs.onFrame = {
+            if (::ghosts.isInitialized) ghosts.invalidate()
+            root.invalidate()
+        }
         topTabs.onSelect = { switchHomeTop(it) }
         topTabs.onReselect = {
             if (homeList.computeVerticalScrollOffset() > 0) homeList.smoothScrollToPosition(0) else loadHome()

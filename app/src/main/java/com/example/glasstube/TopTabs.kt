@@ -27,7 +27,7 @@ import kotlin.math.sqrt
  * moves and springs onto the chosen tab. The activity puts the lens under [barRect] and
  * [capRect] (see [pressAmount]).
  */
-class TopTabs(context: Context, labels: List<String>, lensOn: Boolean) : FrameLayout(context) {
+class TopTabs(context: Context, labels: List<String>, private val lensOn: Boolean) : FrameLayout(context) {
 
     var onSelect: (Int) -> Unit = {}
     var onReselect: (Int) -> Unit = {}
@@ -61,6 +61,10 @@ class TopTabs(context: Context, labels: List<String>, lensOn: Boolean) : FrameLa
     private var downX = 0f
     private var placed = false
     private var layingOut = false
+
+    val labelViews: List<TextView> get() = texts
+    private val ghost = FloatArray(labels.size)
+    fun ghostAlpha(i: Int): Float = ghost.getOrElse(i) { 0f }
 
     /** Capsule (pressed: bigger, past the bar) in this view's coordinates. */
     val capRect = RectF()
@@ -210,6 +214,10 @@ class TopTabs(context: Context, labels: List<String>, lensOn: Boolean) : FrameLa
             t.scaleX = 1f + mag
             t.scaleY = 1f + mag
             t.translationX = (center(i) - capX) * mag
+            // under the pressed glass the label is shown by its copy inside the refracted picture
+            val g = if (lensOn) near * (p * 1.6f).coerceIn(0f, 1f) else 0f
+            ghost[i] = g
+            t.alpha = 1f - g
             t.setShadowLayer(if (night) dpf(6f) * near else 0f, 0f, 0f, Color.argb((150 * near).toInt(), 255, 255, 255))
         }
         if (p > 0.01f) bg.setHole(capRect, capRect.height() / 2f, p.coerceIn(0f, 1f)) else bg.setHole(null, 0f)
