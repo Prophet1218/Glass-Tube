@@ -184,4 +184,12 @@
     <string name="top_live">Élő</string>
     <string name="refraction">Fénytörés</string>
     <string name="refraction_sub">Mennyire hajlítja meg a liquid glass a mögötte lévő képet</string>
+    <string name="playlist">Lejátszási lista</string>
+    <string name="links_title">YouTube linkek</string>
+    <string name="links_on">Glass Tube-ban nyílnak meg</string>
+    <string name="links_off">A böngészőben nyílnak meg — koppints</string>
+    <string name="links_message">Az Android a YouTube linkeket a böngészőben nyitja meg, amíg nem engeded ennek az appnak. A következő képernyőn koppints a „Link hozzáadása” (vagy „Támogatott webcímek”) pontra, és kapcsold be az összes YouTube címet.</string>
+    <string name="links_open_settings">Linkbeállítások megnyitása</string>
+    <string name="links_later">Később</string>
+    <string name="links_hint">Beállítások → Megnyitás alapértelmezés szerint → YouTube címek hozzáadása</string>
 </resources>

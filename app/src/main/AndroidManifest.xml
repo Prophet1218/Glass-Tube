@@ -347,7 +347,7 @@
             android:noHistory="true"
             android:taskAffinity=""
             android:theme="@android:style/Theme.Translucent.NoTitleBar">
-            <!-- YouTube links opened from other apps -->
+            <!-- every YouTube link opened from other apps (videos, shorts, channels, playlists, search) -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -358,17 +358,17 @@
                 <data android:host="youtube.com" />
                 <data android:host="m.youtube.com" />
                 <data android:host="music.youtube.com" />
-                <data android:pathPrefix="/watch" />
-                <data android:pathPrefix="/shorts/" />
-                <data android:pathPrefix="/live/" />
+                <data android:host="youtu.be" />
+                <data android:host="www.youtu.be" />
+                <data android:host="youtube-nocookie.com" />
+                <data android:host="www.youtube-nocookie.com" />
             </intent-filter>
+            <!-- the YouTube app's own link scheme -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" />
-                <data android:scheme="http" />
-                <data android:host="youtu.be" />
+                <data android:scheme="vnd.youtube" />
             </intent-filter>
             <!-- "Share" from the YouTube app or a browser -->
             <intent-filter>

@@ -315,7 +315,9 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         selectTab(Tab.HOME, animate = false)
         loadHome()
         refreshAccountInBackground()
+        val fromLink = intent?.extras?.keySet()?.any { it in listOf(PlayerActivity.EXTRA_URL, PlayerActivity.EXTRA_CHANNEL, PlayerActivity.EXTRA_PLAYLIST, PlayerActivity.EXTRA_SEARCH) } == true
         handleIntent(intent)
+        if (!fromLink && savedInstanceState == null) root.postDelayed({ if (!isFinishing) maybeAskForLinks() }, 900)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -325,9 +327,75 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     }
 
     private fun handleIntent(intent: Intent?) {
-        val url = intent?.getStringExtra(PlayerActivity.EXTRA_URL) ?: return
-        intent.removeExtra(PlayerActivity.EXTRA_URL)
-        if (sheet.currentUrl == url) sheet.expand() else sheet.open(url)
+        intent ?: return
+        intent.getStringExtra(PlayerActivity.EXTRA_URL)?.let { url ->
+            intent.removeExtra(PlayerActivity.EXTRA_URL)
+            if (sheet.currentUrl == url) sheet.expand() else sheet.open(url)
+            return
+        }
+        val channel = intent.getStringExtra(PlayerActivity.EXTRA_CHANNEL)
+        val playlist = intent.getStringExtra(PlayerActivity.EXTRA_PLAYLIST)
+        val query = intent.getStringExtra(PlayerActivity.EXTRA_SEARCH)
+        if (channel == null && playlist == null && query == null) return
+        intent.removeExtra(PlayerActivity.EXTRA_CHANNEL)
+        intent.removeExtra(PlayerActivity.EXTRA_PLAYLIST)
+        intent.removeExtra(PlayerActivity.EXTRA_SEARCH)
+        // pages open over the content once the window is laid out
+        root.post {
+            if (sheet.isOpen) sheet.collapse()
+            when {
+                channel != null -> openChannel(channel)
+                playlist != null -> openNpPlaylist(playlist, getString(R.string.playlist))
+                query != null -> {
+                    expandSearch(focus = false)
+                    field.setText(query)
+                    field.setSelection(query.length)
+                    search(query)
+                }
+            }
+        }
+    }
+
+    /** Android 12+: are YouTube links allowed to open in this app (Settings → Open by default)? */
+    private fun linksAllowed(): Boolean {
+        if (android.os.Build.VERSION.SDK_INT < 31) return true
+        return try {
+            val m = getSystemService(android.content.pm.verify.domain.DomainVerificationManager::class.java)
+            val st = m.getDomainVerificationUserState(packageName) ?: return false
+            st.isLinkHandlingAllowed && listOf("www.youtube.com", "youtube.com", "m.youtube.com", "youtu.be").all {
+                (st.hostToStateMap[it] ?: 0) != android.content.pm.verify.domain.DomainVerificationUserState.DOMAIN_STATE_NONE
+            }
+        } catch (e: Exception) {
+            true
+        }
+    }
+
+    private fun openLinkSettings() {
+        val i = if (android.os.Build.VERSION.SDK_INT >= 31)
+            Intent(android.provider.Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS, android.net.Uri.parse("package:$packageName"))
+        else Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$packageName"))
+        try {
+            startActivity(i)
+        } catch (e: Exception) {
+            try {
+                startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$packageName")))
+            } catch (e2: Exception) {
+                // nothing to open
+            }
+        }
+    }
+
+    /** Once: explains that the system has to be told to open YouTube links here. */
+    private fun maybeAskForLinks() {
+        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+        if (linksAllowed() || prefs.getBoolean("links_asked", false)) return
+        prefs.edit().putBoolean("links_asked", true).apply()
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(R.string.links_title)
+            .setMessage(R.string.links_message)
+            .setPositiveButton(R.string.links_open_settings) { _, _ -> openLinkSettings() }
+            .setNegativeButton(R.string.links_later, null)
+            .show()
     }
 
     override fun onStart() {
@@ -2313,6 +2381,14 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         } catch (e: Exception) {
             null
         }
+        // ---- YouTube links
+        val linksOn = linksAllowed()
+        group("links", R.drawable.ic_open, R.string.links_title, getString(if (linksOn) R.string.links_on else R.string.links_off)) {
+            listOf(
+                Row.Menu(R.drawable.ic_open, getString(R.string.links_open_settings), getString(R.string.links_hint)) { openLinkSettings() }
+            )
+        }
+
         group("about", R.drawable.ic_info, R.string.about, version) {
             listOf(
                 Row.Menu(R.drawable.ic_play, getString(R.string.app_name), version, chevron = false) { },
