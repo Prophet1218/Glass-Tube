@@ -1,3 +1,3 @@
-## Glass Tube 1.3.5
+## Glass Tube 1.3.6
 
-- Toned down the icons under the pressed capsule: they move and grow gently again like in 1.3.2, and are only magnified by the glass itself (no extra enlarging on top)
+- The pressed capsule's glass is calmer: about half the magnification and edge bending, so the picture and the icons under it stay recognisable instead of being blown up and torn apart

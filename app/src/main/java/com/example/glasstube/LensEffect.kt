@@ -395,14 +395,14 @@ vec4 glass(vec2 c, vec4 rect, float radius, float d, float blur, float strength,
     float u = clamp(1.0 + d / bev, 0.0, 1.0);
     float tilt = u * u;
     float cv = max(convex, lensAmt);
-    float cr = max(convexRefr, lensAmt);
+    float cr = max(convexRefr, lensAmt * 0.45);
     if (cr > 0.0) {
         // vastag lencse: a szélek felé erősebben húzza befelé a képet, középen enyhén nagyít
         off += (n * (tilt * u) * (bev * 0.32) + p * 0.045) * cr;
     }
     if (lensAmt > 0.0) {
         // magnifying drop: the middle is enlarged, the rim bends the picture strongly
-        off += (p * 0.12 + n * (tilt * tilt) * (bev * 0.35)) * lensAmt * refrScale;
+        off += (p * 0.06 + n * (tilt * tilt) * (bev * 0.16)) * lensAmt * refrScale;
     }
     float disp = max(dispersion, 0.08 * lensAmt) * dispScale;
     vec4 col = blurAt(c - off, blur);
