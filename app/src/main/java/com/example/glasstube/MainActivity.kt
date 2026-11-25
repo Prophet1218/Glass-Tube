@@ -123,6 +123,8 @@ class HoleDrawable(private val inner: Drawable) : Drawable() {
     override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
 }
 
+private const val TOP_TABS_SPACE = 54
+
 class MainActivity : AppCompatActivity(), PlayerSheet.Host {
 
     private enum class Tab { HOME, SHORTS, YOU }
@@ -201,6 +203,14 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
 
     // home
     private var homeChip = 0
+    private lateinit var topTabs: TopTabs
+    /** Home page tab at the top: 0 home, 1 subscriptions, 2 music, 3 live, 4 more. */
+    private var homeTop = 0
+    private val homeRowsCache = arrayOfNulls<List<Row>>(5)
+    private val homeScrollCache = arrayOfNulls<android.os.Parcelable>(5)
+    private val homeContCache = arrayOfNulls<String>(5)
+    private var kioskEx: org.schabi.newpipe.extractor.kiosk.KioskExtractor<*>? = null
+    private var kioskNext: Page? = null
     private var homeContinuation: String? = null
     private var homeJob: Job? = null
     private var homeMoreJob: Job? = null
@@ -503,6 +513,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             false
         }
         applySkins()
+        setupTopTabs()
         root.viewTreeObserver.addOnPreDrawListener {
             if (dock.width > 0) layoutCapsule()
             updateLens()
@@ -590,17 +601,34 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             } else {
                 l.clearSlot(0)
             }
-            slot(l, 1, tabBar, null)
-            slot(l, 2, if (searchBar.visibility == View.VISIBLE) searchBar else searchButton, null)
-            slot(l, 3, searchBack, null)
+            slot(l, 2, tabBar, null)
+            slot(l, 3, if (searchBar.visibility == View.VISIBLE) searchBar else searchButton, null)
+            slot(l, 4, searchBack, null)
         } else {
-            for (i in 0..3) l.clearSlot(i)
+            for (i in listOf(0, 2, 3, 4)) l.clearSlot(i)
         }
         val top = pages.lastOrNull()
-        if (suggestions.visibility == View.VISIBLE) slot(l, 4, suggestions, dpf(24f))
-        else if (top != null) slot(l, 4, top.back, null)
-        else l.clearSlot(4)
-        slot(l, 5, mini, null)
+        if (suggestions.visibility == View.VISIBLE) slot(l, 5, suggestions, dpf(24f))
+        else if (top != null) slot(l, 5, top.back, null)
+        else l.clearSlot(5)
+        slot(l, 6, mini, null)
+        // the tabs at the top of the home page: the bar, and its capsule as a drop of glass when pressed
+        if (topTabs.visibility == View.VISIBLE && topTabs.alpha > 0.02f && topTabs.width > 0) {
+            slot(l, 7, topTabs, null)
+            val tp = topTabs.pressAmount
+            if (tp > 0.01f) {
+                val st = (tp * 1.4f).coerceIn(0f, 1f)
+                rectOf(topTabs, tmp)
+                val r = topTabs.capRect
+                l.setSlot(1, tmp.left + r.left, tmp.top + r.top, tmp.left + r.right, tmp.top + r.bottom, r.height() / 2f,
+                    dpf(2f) * (1f - st), st * topTabs.alpha, lens = st)
+            } else {
+                l.clearSlot(1)
+            }
+        } else {
+            l.clearSlot(7)
+            l.clearSlot(1)
+        }
 
         // content scrolled under the status bar (and a page's header) flows into a soft blur
         val night = Glass.isNight(this)
@@ -1011,6 +1039,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     private fun showContent() {
         val pageOn = pages.isNotEmpty()
         homeList.visibility = if (!pageOn && !searchActive && tab == Tab.HOME) View.VISIBLE else View.GONE
+        if (::topTabs.isInitialized) topTabs.visibility = homeList.visibility
         youList.visibility = if (!pageOn && !searchActive && tab == Tab.YOU) View.VISIBLE else View.GONE
         shortsList.visibility = if (!searchActive && tab == Tab.SHORTS) View.VISIBLE else View.GONE
         searchList.visibility = if (!pageOn && searchActive) View.VISIBLE else View.GONE
@@ -1069,7 +1098,16 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
 
     private fun applyListPadding() {
         val listBottom = navBottom + dp(56) + dp(36) + if (miniShown) dp(64) else 0
-        for (rv in listOf(homeList, youList, searchList)) rv.setPadding(0, statusTop, 0, listBottom)
+        for (rv in listOf(youList, searchList)) rv.setPadding(0, statusTop, 0, listBottom)
+        // the home list starts under the floating tabs
+        homeList.setPadding(0, statusTop + dp(TOP_TABS_SPACE), 0, listBottom)
+        if (::topTabs.isInitialized) {
+            val lp = topTabs.layoutParams as FrameLayout.LayoutParams
+            if (lp.topMargin != statusTop + dp(8)) {
+                lp.topMargin = statusTop + dp(8)
+                topTabs.layoutParams = lp
+            }
+        }
     }
 
     private fun collapseOnScroll(rv: RecyclerView, dy: Int) {
@@ -1110,18 +1148,9 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
 
     private fun homeHeader(): List<Row> {
         val rows = ArrayList<Row>()
-        rows.add(Row.Title(getString(R.string.app_name), null))
         if (Account.isSignedIn(this) && Account.isExpired(this)) {
             rows.add(Row.Message(getString(R.string.session_expired), getString(R.string.sign_in_again)) {
                 signIn.launch(Intent(this, SignInActivity::class.java))
-            })
-        }
-        if (Account.isSignedIn(this) || Subscriptions(this).all().isNotEmpty()) {
-            rows.add(Row.Chips(listOf(getString(R.string.chip_for_you), getString(R.string.chip_subscriptions)), homeChip) {
-                if (it != homeChip) {
-                    homeChip = it
-                    loadHome()
-                }
             })
         }
         return rows
@@ -1131,6 +1160,24 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         homeJob?.cancel()
         homeMoreJob?.cancel()
         homeContinuation = null
+        kioskEx = null
+        kioskNext = null
+        homeRowsCache[homeTop] = null
+        when (homeTop) {
+            2 -> {
+                loadKiosk(listOf("trending_music"), null)
+                return
+            }
+            3 -> {
+                loadKiosk(listOf("live"), "live")
+                return
+            }
+            4 -> {
+                homeAdapter.submit(homeHeader() + moreRows())
+                return
+            }
+        }
+        homeChip = if (homeTop == 1) 1 else 0
         homeAdapter.submit(homeHeader() + Row.Loading)
         homeJob = lifecycleScope.launch {
             try {
@@ -1166,6 +1213,191 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
                 homeAdapter.submit(
                     homeHeader() + Row.Message(Errors.text(this@MainActivity, e), getString(R.string.retry)) { loadHome() }
                 )
+            }
+        }
+    }
+
+    // ---- tabs at the top of the home page
+
+    private fun setupTopTabs() {
+        val labels = listOf(R.string.top_home, R.string.top_subs, R.string.top_music, R.string.top_live, R.string.top_more).map { getString(it) }
+        topTabs = TopTabs(this, labels, lensOn)
+        topTabs.onFrame = { root.invalidate() }
+        topTabs.onSelect = { switchHomeTop(it) }
+        topTabs.onReselect = {
+            if (homeList.computeVerticalScrollOffset() > 0) homeList.smoothScrollToPosition(0) else loadHome()
+        }
+        val lp = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(38), Gravity.TOP)
+        lp.marginStart = dp(16)
+        lp.marginEnd = dp(16)
+        lp.topMargin = statusTop + dp(8)
+        // above the content (so the glass refracts the list), below the dock and the player
+        root.addView(topTabs, root.indexOfChild(content) + 1, lp)
+        topTabs.visibility = homeList.visibility
+    }
+
+    /** Switching top tabs: the same slide-and-fade as between the bottom tabs. */
+    private fun switchHomeTop(i: Int) {
+        if (i == homeTop) return
+        val dir = if (i > homeTop) 1 else -1
+        // keep what the old tab showed, so coming back is instant
+        val oldLoading = homeAdapter.items.any { it == Row.Loading } && homeAdapter.items.none { it is Row.VideoRow }
+        homeRowsCache[homeTop] = if (oldLoading) null else homeAdapter.items.toList()
+        homeScrollCache[homeTop] = homeList.layoutManager?.onSaveInstanceState()
+        homeContCache[homeTop] = homeContinuation
+        homeJob?.cancel()
+        homeMoreJob?.cancel()
+        homeTop = i
+        val shift = dpf(36f) * dir
+        homeList.animate().cancel()
+        homeList.animate().alpha(0f).translationX(-shift).setDuration(110)
+            .setInterpolator(DecelerateInterpolator())
+            .withEndAction {
+                val cached = homeRowsCache[i]
+                if (cached != null && i != 2 && i != 3) {
+                    homeContinuation = homeContCache[i]
+                    homeAdapter.submit(cached)
+                    homeScrollCache[i]?.let { homeList.layoutManager?.onRestoreInstanceState(it) }
+                } else {
+                    loadHome()
+                    homeList.scrollToPosition(0)
+                }
+                homeList.translationX = shift
+                homeList.animate().alpha(1f).translationX(0f).setDuration(220)
+                    .setInterpolator(DecelerateInterpolator(1.6f)).start()
+            }.start()
+        setBarCollapsed(false)
+    }
+
+    private fun moreRows(): List<Row> = listOf(
+        Row.Menu(R.drawable.ic_trending, getString(R.string.more_trending)) { openKioskPage(getString(R.string.more_trending), "Trending") },
+        Row.Menu(R.drawable.ic_music, getString(R.string.more_music)) { openKioskPage(getString(R.string.more_music), "trending_music") },
+        Row.Menu(R.drawable.ic_gaming, getString(R.string.more_gaming)) { openKioskPage(getString(R.string.more_gaming), "trending_gaming") },
+        Row.Menu(R.drawable.ic_movie, getString(R.string.more_movies)) { openKioskPage(getString(R.string.more_movies), "trending_movies_and_shows") },
+        Row.Menu(R.drawable.ic_podcast, getString(R.string.more_podcasts)) { openKioskPage(getString(R.string.more_podcasts), "trending_podcasts_episodes") }
+    )
+
+    private fun kioskVideos(items: List<*>): List<Video> =
+        items.filterIsInstance<StreamInfoItem>().mapNotNull { Video.from(this, it) }
+
+    /** Music / live: a YouTube kiosk (the first of [ids] that works), or a search as a fallback. */
+    private fun loadKiosk(ids: List<String>, fallbackQuery: String?) {
+        val tabNow = homeTop
+        homeAdapter.submit(homeHeader() + Row.Loading)
+        homeJob = lifecycleScope.launch {
+            try {
+                var videos: List<Video> = emptyList()
+                for (id in ids) {
+                    try {
+                        val (ex, list) = withContext(Dispatchers.IO) {
+                            val ex = yt.kioskList.getExtractorById(id, null)
+                            ex.fetchPage()
+                            ex to ex.initialPage
+                        }
+                        videos = kioskVideos(list.items)
+                        if (videos.isNotEmpty()) {
+                            kioskEx = ex
+                            kioskNext = list.nextPage
+                            break
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // next source
+                    }
+                }
+                if (videos.isEmpty() && fallbackQuery != null) {
+                    videos = withContext(Dispatchers.IO) {
+                        val h = yt.searchQHFactory.fromQuery(fallbackQuery, listOf(YoutubeSearchQueryHandlerFactory.VIDEOS), "")
+                        SearchInfo.getInfo(yt, h).relatedItems.filterIsInstance<StreamInfoItem>()
+                            .filter { it.streamType == org.schabi.newpipe.extractor.stream.StreamType.LIVE_STREAM }
+                            .mapNotNull { Video.from(this@MainActivity, it) }
+                    }
+                }
+                if (homeTop != tabNow) return@launch
+                val rows = ArrayList<Row>(homeHeader())
+                if (videos.isEmpty()) rows.add(Row.Message(getString(R.string.nothing_here), getString(R.string.retry)) { loadHome() })
+                else {
+                    videos.forEach { rows.add(Row.VideoRow(it)) }
+                    if (Page.isValid(kioskNext)) rows.add(Row.Loading)
+                }
+                homeAdapter.submit(rows)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (homeTop == tabNow) homeAdapter.submit(
+                    homeHeader() + Row.Message(Errors.text(this@MainActivity, e), getString(R.string.retry)) { loadHome() }
+                )
+            }
+        }
+    }
+
+    private fun loadMoreKiosk() {
+        val ex = kioskEx ?: return
+        val next = kioskNext ?: return
+        if (!Page.isValid(next) || homeMoreJob?.isActive == true) return
+        val tabNow = homeTop
+        homeMoreJob = lifecycleScope.launch {
+            try {
+                val page = withContext(Dispatchers.IO) { ex.getPage(next) }
+                if (homeTop != tabNow) return@launch
+                kioskNext = page.nextPage
+                val rows = ArrayList<Row>()
+                kioskVideos(page.items).forEach { rows.add(Row.VideoRow(it)) }
+                if (Page.isValid(kioskNext)) rows.add(Row.Loading)
+                homeAdapter.append(rows)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                homeAdapter.append(listOf(Row.Message(Errors.text(this@MainActivity, e), getString(R.string.retry)) { loadMoreKiosk() }))
+            }
+        }
+    }
+
+    private fun openKioskPage(title: String, id: String) {
+        val p = PageView(title)
+        pushPage(p)
+        p.adapter.submit(listOf(Row.Loading))
+        var ex: org.schabi.newpipe.extractor.kiosk.KioskExtractor<*>? = null
+        var next: Page? = null
+        fun more() {
+            val e = ex ?: return
+            val n = next ?: return
+            if (!Page.isValid(n) || p.job?.isActive == true) return
+            p.job = lifecycleScope.launch {
+                try {
+                    val page = withContext(Dispatchers.IO) { e.getPage(n) }
+                    next = page.nextPage
+                    val rows = ArrayList<Row>()
+                    kioskVideos(page.items).forEach { rows.add(Row.VideoRow(it)) }
+                    if (Page.isValid(next)) rows.add(Row.Loading)
+                    p.adapter.append(rows)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    p.adapter.append(listOf(Row.Message(Errors.text(this@MainActivity, e))))
+                }
+            }
+        }
+        p.moreFn = { more() }
+        p.job = lifecycleScope.launch {
+            try {
+                val (e, first) = withContext(Dispatchers.IO) {
+                    val e = yt.kioskList.getExtractorById(id, null)
+                    e.fetchPage()
+                    e to e.initialPage
+                }
+                ex = e
+                next = first.nextPage
+                val rows = ArrayList<Row>()
+                kioskVideos(first.items).forEach { rows.add(Row.VideoRow(it)) }
+                if (rows.isEmpty()) rows.add(Row.Message(getString(R.string.nothing_here)))
+                else if (Page.isValid(next)) rows.add(Row.Loading)
+                p.adapter.submit(rows)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                p.adapter.submit(listOf(Row.Message(Errors.text(this@MainActivity, e))))
             }
         }
     }
@@ -1232,6 +1464,10 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     }
 
     private fun loadMoreHome() {
+        if (homeTop == 2 || homeTop == 3) {
+            loadMoreKiosk()
+            return
+        }
         val token = homeContinuation ?: return
         if (homeMoreJob?.isActive == true) return
         if (homeAdapter.items.lastOrNull() is Row.Message) homeAdapter.append(listOf(Row.Loading))
@@ -1419,6 +1655,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     private fun onAccountChanged() {
         remoteHistory = null
         homeChip = 0
+        for (i in homeRowsCache.indices) homeRowsCache[i] = null
         updateYouIcon()
         selectTab(tab, animate = false)
         loadHome()

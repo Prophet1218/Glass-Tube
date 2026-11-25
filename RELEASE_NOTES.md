@@ -1,4 +1,5 @@
-## Glass Tube 1.0.1
+## Glass Tube 1.1.0
 
-- The liquid glass behind the player buttons stays fixed behind them while the screen turns (it used to drift while the video's little grow-and-settle animation ran)
-- The buttons come back faster after turning
+- New tabs at the top of the home page: Home, Subscriptions, Music, Live and More, in a smaller copy of the bottom glass bar. The capsule looks and behaves the same: it grows into a drop of glass when pressed, can be dragged across the tabs and springs onto the chosen one
+- Switching between the top tabs slides and fades like switching between the bottom tabs; each tab keeps its place when you come back
+- Music and Live show YouTube's music and live videos; More opens Trending, Music, Gaming, Movies & shows and Podcasts

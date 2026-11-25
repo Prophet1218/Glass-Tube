@@ -24,7 +24,7 @@ class LensEffect(private val target: View) {
 
     private val shader = RuntimeShader(SRC)
     private val rects = Array(SLOTS) { FloatArray(4) }
-    private val params = Array(SLOTS) { FloatArray(3) }   // sugár, elmosás, erősség (0..1)
+    private val params = Array(SLOTS) { FloatArray(4) }   // sugár, elmosás, erősség (0..1), nagyító lencse (0..1)
     private val topTint = FloatArray(4)
     private val rim = FloatArray(4)
     private var rimWidth = 1f
@@ -74,15 +74,16 @@ class LensEffect(private val target: View) {
     /** Egy üvegfelület helye a célnézet koordinátáiban; [radius] a sarok sugara, [blurPx] az elmosás. */
     fun setSlot(
         index: Int, l: Float, t: Float, r: Float, b: Float, radius: Float, blurPx: Float,
-        strength: Float = 1f
+        strength: Float = 1f, lens: Float = 0f
     ) {
         if (index < 0 || index >= SLOTS) return
         val p = params[index]
         val st = strength.coerceIn(0f, 1f)
-        if (set(rects[index], l, t, r, b) || p[0] != radius || p[1] != blurPx || p[2] != st) {
+        if (set(rects[index], l, t, r, b) || p[0] != radius || p[1] != blurPx || p[2] != st || p[3] != lens) {
             p[0] = radius
             p[1] = blurPx
             p[2] = st
+            p[3] = lens
             dirty = true
         }
     }
@@ -247,7 +248,7 @@ class LensEffect(private val target: View) {
 
     companion object {
         /** Ennyi üvegfelületet tud egyszerre rajzolni; a kisebb sorszám van felül. */
-        const val SLOTS = 6
+        const val SLOTS = 8
 
         private const val MASK_SRC = """
 uniform shader content;
@@ -285,17 +286,21 @@ half4 main(vec2 c) {
         private const val SRC = """
 uniform shader content;
 uniform vec4 g0;
-uniform vec3 p0;
+uniform vec4 p0;
 uniform vec4 g1;
-uniform vec3 p1;
+uniform vec4 p1;
 uniform vec4 g2;
-uniform vec3 p2;
+uniform vec4 p2;
 uniform vec4 g3;
-uniform vec3 p3;
+uniform vec4 p3;
 uniform vec4 g4;
-uniform vec3 p4;
+uniform vec4 p4;
 uniform vec4 g5;
-uniform vec3 p5;
+uniform vec4 p5;
+uniform vec4 g6;
+uniform vec4 p6;
+uniform vec4 g7;
+uniform vec4 p7;
 uniform float refrHeight;
 uniform float refrAmount;
 uniform float dispersion;
@@ -428,36 +433,42 @@ vec4 glass(vec2 c, vec4 rect, float radius, float d, float blur, float strength,
     return col;
 }
 
-// everything except slot 0 (slot 0 fades in over this, not over the bare content)
+// everything except the two press capsules (they fade in over this, not over the bare content)
 half4 rest(vec2 c) {
-    if (g1.z > g1.x) {
-        float d1 = sdRect(c, g1, p1.x);
-        if (d1 < 0.0) {
-            return half4(glass(c, g1, p1.x, d1, p1.y, p1.z, 0.0));
-        }
-    }
     if (g2.z > g2.x) {
         float d2 = sdRect(c, g2, p2.x);
         if (d2 < 0.0) {
-            return half4(glass(c, g2, p2.x, d2, p2.y, p2.z, 0.0));
+            return half4(glass(c, g2, p2.x, d2, p2.y, p2.z, p2.w));
         }
     }
     if (g3.z > g3.x) {
         float d3 = sdRect(c, g3, p3.x);
         if (d3 < 0.0) {
-            return half4(glass(c, g3, p3.x, d3, p3.y, p3.z, 0.0));
+            return half4(glass(c, g3, p3.x, d3, p3.y, p3.z, p3.w));
         }
     }
     if (g4.z > g4.x) {
         float d4 = sdRect(c, g4, p4.x);
         if (d4 < 0.0) {
-            return half4(glass(c, g4, p4.x, d4, p4.y, p4.z, 0.0));
+            return half4(glass(c, g4, p4.x, d4, p4.y, p4.z, p4.w));
         }
     }
     if (g5.z > g5.x) {
         float d5 = sdRect(c, g5, p5.x);
         if (d5 < 0.0) {
-            return half4(glass(c, g5, p5.x, d5, p5.y, p5.z, 0.0));
+            return half4(glass(c, g5, p5.x, d5, p5.y, p5.z, p5.w));
+        }
+    }
+    if (g6.z > g6.x) {
+        float d6 = sdRect(c, g6, p6.x);
+        if (d6 < 0.0) {
+            return half4(glass(c, g6, p6.x, d6, p6.y, p6.z, p6.w));
+        }
+    }
+    if (g7.z > g7.x) {
+        float d7 = sdRect(c, g7, p7.x);
+        if (d7 < 0.0) {
+            return half4(glass(c, g7, p7.x, d7, p7.y, p7.z, p7.w));
         }
     }
     if (topH > 0.0 && c.y < topH + topExt) {
@@ -493,15 +504,23 @@ half4 rest(vec2 c) {
 }
 
 half4 main(vec2 c) {
-    // the glass surfaces come first: a capsule inside the top blur band (e.g. the tab group
-    // capsule in the tab overview) is real glass, not covered by the band
+    // the press capsules come first and hand over smoothly to the surface underneath
     if (g0.z > g0.x) {
         float d0 = sdRect(c, g0, p0.x);
         if (d0 < 0.0) {
-            half4 g = half4(glass(c, g0, p0.x, d0, p0.y, 1.0, lens0));
+            half4 g = half4(glass(c, g0, p0.x, d0, p0.y, 1.0, max(p0.w, lens0)));
             if (p0.z < 0.999) {
-                // smooth hand-over to the surface underneath (e.g. the frosted tab bar)
                 return mix(rest(c), g, half(p0.z));
+            }
+            return g;
+        }
+    }
+    if (g1.z > g1.x) {
+        float d1 = sdRect(c, g1, p1.x);
+        if (d1 < 0.0) {
+            half4 g = half4(glass(c, g1, p1.x, d1, p1.y, 1.0, p1.w));
+            if (p1.z < 0.999) {
+                return mix(rest(c), g, half(p1.z));
             }
             return g;
         }

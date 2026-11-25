@@ -179,4 +179,14 @@
     <string name="chapters">Fejezetek</string>
     <string name="swipe_controls">Fényerő és hangerő gesztus</string>
     <string name="swipe_controls_sub">Teljes képernyőn a bal szélén csúsztatva a fényerő, a jobb szélén a hangerő állítható</string>
+    <string name="top_home">Főoldal</string>
+    <string name="top_subs">Követett</string>
+    <string name="top_music">Zene</string>
+    <string name="top_live">Élő</string>
+    <string name="top_more">Több</string>
+    <string name="more_trending">Felkapott</string>
+    <string name="more_gaming">Játékok</string>
+    <string name="more_movies">Filmek és sorozatok</string>
+    <string name="more_podcasts">Podcastok</string>
+    <string name="more_music">Zene</string>
 </resources>

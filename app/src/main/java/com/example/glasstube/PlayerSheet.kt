@@ -511,7 +511,7 @@ class PlayerSheet(
         if (menuOn) {
             lensRect(menuScroll)
             l.setSlot(0, tmp.left, tmp.top, tmp.right, tmp.bottom, dpf(22f), dpf(6f), menuScroll.alpha)
-            for (i in 1 until 6) l.clearSlot(i)
+            for (i in 1 until LensEffect.SLOTS) l.clearSlot(i)
         } else {
             buttons.forEachIndexed { i, b ->
                 lensRect(b)
