@@ -23,11 +23,9 @@
         android:textColor="@color/text_muted"
         android:textSize="13sp" />
 
-    <LinearLayout
-        android:id="@+id/options"
+    <com.example.glasstube.GlassSegmented
+        android:id="@+id/segmented"
         android:layout_width="match_parent"
         android:layout_height="40dp"
-        android:layout_marginTop="10dp"
-        android:orientation="horizontal"
-        android:padding="3dp" />
+        android:layout_marginTop="10dp" />
 </LinearLayout>

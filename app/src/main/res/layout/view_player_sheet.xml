@@ -42,6 +42,7 @@
             android:id="@+id/controls"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:clipChildren="false"
             android:background="@drawable/player_scrim">
 
             <FrameLayout
@@ -79,11 +80,15 @@
             </FrameLayout>
 
             <LinearLayout
+                android:id="@+id/centerRow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center"
+                android:clipChildren="false"
+                android:clipToPadding="false"
                 android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:orientation="horizontal"
+                android:padding="8dp">
 
                 <FrameLayout
                     android:id="@+id/btnBack10"
@@ -108,13 +113,12 @@
                     android:layout_marginEnd="28dp"
                     android:contentDescription="@string/play_pause">
 
-                    <ImageView
+                    <com.example.glasstube.PlayPauseView
                         android:id="@+id/icPlay"
-                        android:layout_width="30dp"
-                        android:layout_height="30dp"
+                        android:layout_width="34dp"
+                        android:layout_height="34dp"
                         android:layout_gravity="center"
-                        android:importantForAccessibility="no"
-                        android:src="@drawable/ic_pause" />
+                        android:importantForAccessibility="no" />
                 </FrameLayout>
 
                 <FrameLayout
@@ -194,23 +198,84 @@
             android:layout_width="match_parent"
             android:layout_height="30dp"
             android:layout_gravity="bottom" />
+
+        <FrameLayout
+            android:id="@+id/menuScrim"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clickable="true"
+            android:focusable="true"
+            android:visibility="gone">
+
+            <ScrollView
+                android:id="@+id/menuScroll"
+                android:layout_width="250dp"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|end"
+                android:layout_marginTop="10dp"
+                android:layout_marginEnd="10dp"
+                android:overScrollMode="never"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/menu"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="6dp" />
+            </ScrollView>
+        </FrameLayout>
     </FrameLayout>
 
-    <FrameLayout
-        android:id="@+id/menuScrim"
+    <!-- comments, sliding up under the video -->
+    <LinearLayout
+        android:id="@+id/commentsPanel"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:background="@drawable/panel_bg"
         android:clickable="true"
         android:focusable="true"
+        android:orientation="vertical"
         android:visibility="gone">
 
         <LinearLayout
-            android:id="@+id/menu"
-            android:layout_width="260dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_gravity="top|end"
-            android:orientation="vertical"
-            android:paddingTop="6dp"
-            android:paddingBottom="6dp" />
-    </FrameLayout>
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="16dp"
+            android:paddingTop="10dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="6dp">
+
+            <TextView
+                android:id="@+id/commentsTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/comments"
+                android:textColor="@color/text"
+                android:textSize="19sp"
+                android:textStyle="bold" />
+
+            <ImageView
+                android:id="@+id/commentsClose"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/close"
+                android:padding="11dp"
+                android:src="@drawable/ic_x" />
+        </LinearLayout>
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/commentsList"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:overScrollMode="never" />
+    </LinearLayout>
+
 </FrameLayout>

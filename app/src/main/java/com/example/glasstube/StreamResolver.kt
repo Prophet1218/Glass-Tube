@@ -35,7 +35,7 @@ import java.io.IOException
 @OptIn(UnstableApi::class)
 object StreamResolver {
 
-    fun build(info: StreamInfo, metadata: MediaMetadata, hdr: List<HdrStream> = emptyList()): MediaSource {
+    fun build(info: StreamInfo, metadata: MediaMetadata): MediaSource {
         val yt = YtDataSource.Factory()
         fun item(uri: String) = MediaItem.Builder()
             .setUri(uri)
@@ -81,21 +81,8 @@ object StreamResolver {
             }
         }
 
-        fun hdrSource(h: HdrStream): MediaSource? = try {
-            val manifest = DashManifestParser().parse(
-                Uri.parse(h.url), ByteArrayInputStream(h.manifest().toByteArray(Charsets.UTF_8))
-            )
-            DashMediaSource.Factory(DefaultDashChunkSource.Factory(yt), yt)
-                .createMediaSource(manifest, item(h.url))
-        } catch (e: Exception) {
-            null
-        }
-
         val audio = pickAudio(info.audioStreams)
-        // HDR versions replace the SDR stream of the same resolution
-        val hdrSides = hdr.map { minOf(it.width, it.height) }.toSet()
-        val videos = hdr.mapNotNull { hdrSource(it) } +
-            pickVideos(info.videoOnlyStreams).filter { shortSide(it) !in hdrSides }.mapNotNull { dash(it) }
+        val videos = pickVideos(info.videoOnlyStreams).mapNotNull { dash(it) }
         val audioSource = audio?.let { dash(it) }
         if (videos.isNotEmpty() && audioSource != null) {
             return MergingMediaSource(true, true, *(videos + audioSource).toTypedArray())

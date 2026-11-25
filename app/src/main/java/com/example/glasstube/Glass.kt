@@ -20,7 +20,10 @@ object Glass {
 
     fun textColor(ctx: Context): Int = if (isNight(ctx)) Color.WHITE else 0xFF1D1F24.toInt()
 
-    fun lensSupported(): Boolean = Build.VERSION.SDK_INT >= 33
+    /** Real refracting glass: Android 13+ and not turned off in the settings. */
+    var reduceTransparency = false
+
+    fun lensSupported(): Boolean = Build.VERSION.SDK_INT >= 33 && !reduceTransparency
 
     /** A glass skin for a surface that has the lens underneath ([lens] = true) or not. */
     fun skin(ctx: Context, radius: Float?, lens: Boolean): GlassSkinDrawable {

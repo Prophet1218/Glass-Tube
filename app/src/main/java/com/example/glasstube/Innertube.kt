@@ -70,6 +70,22 @@ object Innertube {
         return parse(post(ctx, "browse", body))
     }
 
+    /** The signed-in user's rating of [videoId]: "LIKE", "DISLIKE" or "INDIFFERENT" (null if unknown). */
+    fun likeStatus(ctx: Context, videoId: String): String? {
+        val r = post(ctx, "next", JSONObject().put("videoId", videoId))
+        return (find(r, "likeStatus") as? String)
+    }
+
+    /** Rates [videoId]: [status] = "LIKE", "DISLIKE" or "INDIFFERENT" (removes the rating). */
+    fun rate(ctx: Context, videoId: String, status: String) {
+        val endpoint = when (status) {
+            "LIKE" -> "like/like"
+            "DISLIKE" -> "like/dislike"
+            else -> "like/removelike"
+        }
+        post(ctx, endpoint, JSONObject().put("target", JSONObject().put("videoId", videoId)))
+    }
+
     /** Name, handle and photo of the signed-in account. */
     fun accountInfo(ctx: Context): Triple<String?, String?, String?> {
         val r = post(ctx, "account/account_menu", JSONObject())

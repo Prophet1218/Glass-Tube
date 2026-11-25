@@ -14,6 +14,7 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.RectF
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
 import android.net.Uri
@@ -32,10 +33,12 @@ import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
+import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -65,18 +68,22 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.schabi.newpipe.extractor.Page
 import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.comments.CommentsInfo
+import org.schabi.newpipe.extractor.comments.CommentsInfoItem
 import org.schabi.newpipe.extractor.stream.Description
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.stream.StreamType
 import kotlin.math.abs
+import kotlin.math.pow
 
 /**
  * The player as a sheet over the app: expanded it is the full player screen; collapsed, the
  * video shrinks into the mini player above the tab bar (and can be dragged between the two).
- * The buttons over the video are real liquid glass (the lens refracts the video) when the video
- * is drawn on a TextureView, i.e. while HDR is off.
+ * The buttons and the settings menu over the video are real liquid glass: the lens refracts the
+ * video under them.
  */
 @OptIn(UnstableApi::class)
 class PlayerSheet(
@@ -91,6 +98,8 @@ class PlayerSheet(
         fun onNowPlaying(info: StreamInfo?)
         fun onPlayingChanged(playing: Boolean)
         fun onSheetClosed()
+        /** The mini player being swiped down: move it by [dy] and fade it to [alpha]. */
+        fun onMiniOffset(dy: Float, alpha: Float)
         fun statusTop(): Int
         fun navBottom(): Int
     }
@@ -107,14 +116,19 @@ class PlayerSheet(
     private val timeNow: TextView = view.findViewById(R.id.timeNow)
     private val timeTotal: TextView = view.findViewById(R.id.timeTotal)
     private val seek: GlassSeekBar = view.findViewById(R.id.seek)
-    private val icPlay: ImageView = view.findViewById(R.id.icPlay)
+    private val icPlay: PlayPauseView = view.findViewById(R.id.icPlay)
     private val icFull: ImageView = view.findViewById(R.id.icFull)
     private val menuScrim: FrameLayout = view.findViewById(R.id.menuScrim)
+    private val menuScroll: ScrollView = view.findViewById(R.id.menuScroll)
     private val menu: LinearLayout = view.findViewById(R.id.menu)
+    private val commentsPanel: LinearLayout = view.findViewById(R.id.commentsPanel)
+    private val commentsTitle: TextView = view.findViewById(R.id.commentsTitle)
+    private val commentsList: RecyclerView = view.findViewById(R.id.commentsList)
     private val buttons: List<View> = listOf(R.id.btnDown, R.id.btnSettings, R.id.btnBack10, R.id.btnPlay, R.id.btnFwd10, R.id.btnFull)
         .map { view.findViewById<View>(it) }
 
     private val adapter = VideoAdapter(onVideo = { open(it.url) })
+    private val commentsAdapter = VideoAdapter(onVideo = { })
     private val settings = Settings(activity)
     private val store = Store(activity)
     private val yt = ServiceList.YouTube
@@ -123,28 +137,43 @@ class PlayerSheet(
     private fun dpf(v: Float) = v * density
 
     private var playerView: PlayerView? = null
-    private var surfaceMode = false
     private var lens: LensEffect? = null
 
     private var service: PlaybackService? = null
     private var bound = false
     private var pendingInfo: StreamInfo? = null
-    private var pendingHdr: List<HdrStream> = emptyList()
+    private var pendingStart = 0L
     var currentUrl: String? = null
         private set
+    private var currentId: String? = null
+    private var nextUp: Video? = null
     private var loadJob: Job? = null
     private var progressJob: Job? = null
     private var hideJob: Job? = null
+    private var loadingInfo = false
+    private var buffering = false
 
     /** 0 = mini player, 1 = full player. */
     var progress = 0f
         private set
     private var progressAnim: ValueAnimator? = null
-    private var controlsShown = true
+    private var controlsShown = false
     var fullscreen = false
         private set
     private var fullscreenByRotation = false
     private var orientationListener: OrientationEventListener? = null
+
+    // comments
+    private var commentsInfo: CommentsInfo? = null
+    private var commentsNext: Page? = null
+    private var commentsJob: Job? = null
+    private var commentsMoreJob: Job? = null
+
+    // rating
+    private var likeStatus = "INDIFFERENT"
+    private var baseLikes = -1L
+    private var likePill: TextView? = null
+    private var dislikePill: TextView? = null
 
     val isOpen: Boolean get() = view.visibility == View.VISIBLE
     val isPlaying: Boolean get() = service?.player?.isPlaying == true
@@ -154,7 +183,8 @@ class PlayerSheet(
 
     private val playerListener = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) {
-            loading.visibility = View.GONE
+            buffering = false
+            updateLoading()
             val cause = error.cause
             val text = if (cause != null) Errors.text(activity, cause) else error.errorCodeName
             Toast.makeText(activity, activity.getString(R.string.playback_error, text), Toast.LENGTH_LONG).show()
@@ -162,8 +192,13 @@ class PlayerSheet(
         }
 
         override fun onPlaybackStateChanged(state: Int) {
-            loading.visibility = if (state == Player.STATE_BUFFERING) View.VISIBLE else View.GONE
-            if (state == Player.STATE_ENDED) showControls(autoHide = false)
+            buffering = state == Player.STATE_BUFFERING
+            updateLoading()
+            if (state == Player.STATE_ENDED) {
+                savePosition()
+                val next = nextUp
+                if (settings.autoplay && next != null) load(next.url) else showControls(autoHide = false)
+            }
             updatePlayIcon()
         }
 
@@ -171,6 +206,7 @@ class PlayerSheet(
             playerView?.keepScreenOn = isPlaying
             updatePlayIcon()
             host.onPlayingChanged(isPlaying)
+            if (!isPlaying) savePosition()
             if (isPlaying && controlsShown) scheduleHide()
         }
     }
@@ -182,20 +218,20 @@ class PlayerSheet(
             svc.player.addListener(playerListener)
             playerView?.player = svc.player
             setVideoEnabled(true)
-            updatePlayIcon()
+            updatePlayIcon(animate = false)
             val pending = pendingInfo
             if (pending != null) {
                 pendingInfo = null
-                startPlayback(pending, pendingHdr)
+                startPlayback(pending, pendingStart)
             } else if (currentUrl == null && svc.currentInfo != null) {
                 // the app was reopened while a video kept playing: show it in the mini player
                 val info = svc.currentInfo!!
                 currentUrl = svc.currentUrl
+                currentId = Video.idOf(info.url)
                 view.visibility = View.VISIBLE
                 ensurePlayerView()
                 showDetails(info, record = false)
                 host.onNowPlaying(info)
-                loading.visibility = View.GONE
                 view.post { setProgress(0f) }
             }
         }
@@ -210,6 +246,21 @@ class PlayerSheet(
         details.layoutManager = LinearLayoutManager(activity)
         details.adapter = adapter
         details.itemAnimator = null
+        commentsList.layoutManager = LinearLayoutManager(activity)
+        commentsList.adapter = commentsAdapter
+        commentsList.itemAnimator = null
+        commentsList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+                val lm = rv.layoutManager as LinearLayoutManager
+                if (lm.findLastVisibleItemPosition() >= commentsAdapter.itemCount - 4 &&
+                    commentsAdapter.items.lastOrNull() == Row.Loading
+                ) loadMoreComments()
+            }
+        })
+        view.findViewById<ImageView>(R.id.commentsClose).apply {
+            setColorFilter(Glass.textColor(activity))
+            setOnClickListener { closeComments() }
+        }
         videoBox.outlineProvider = object : ViewOutlineProvider() {
             override fun getOutline(v: View, outline: Outline) {
                 outline.setRoundRect(0, 0, v.width, v.height, corner)
@@ -217,6 +268,8 @@ class PlayerSheet(
         }
         videoBox.clipToOutline = true
         setupControls()
+        controls.alpha = 0f
+        controls.visibility = View.INVISIBLE
         view.viewTreeObserver.addOnPreDrawListener {
             updateLens()
             true
@@ -233,24 +286,15 @@ class PlayerSheet(
 
     private var corner = 0f
 
-    // ================================================================ player view (texture / surface)
+    // ================================================================ player view + lens
 
     private fun ensurePlayerView() {
-        val wantSurface = settings.hdr && HdrStreams.deviceSupports(activity)
-        if (playerView != null && wantSurface == surfaceMode) return
-        playerView?.let {
-            it.player = null
-            lens?.clear()
-            playerHolder.removeView(it)
-        }
-        surfaceMode = wantSurface
-        val pv = LayoutInflater.from(activity).inflate(
-            if (wantSurface) R.layout.view_player_surface else R.layout.view_player_texture, playerHolder, false
-        ) as PlayerView
+        if (playerView != null) return
+        val pv = LayoutInflater.from(activity).inflate(R.layout.view_player_texture, playerHolder, false) as PlayerView
         playerHolder.addView(pv)
         pv.player = service?.player
         playerView = pv
-        lens = if (!wantSurface && Glass.lensSupported()) {
+        lens = if (Glass.lensSupported()) {
             try {
                 LensEffect(pv).apply {
                     setParams(dpf(22f), dpf(24f), 0.15f)
@@ -269,22 +313,33 @@ class PlayerSheet(
     private val loc = IntArray(2)
     private val loc2 = IntArray(2)
 
+    private fun lensRect(v: View) {
+        val pv = playerView ?: return
+        pv.getLocationInWindow(loc2)
+        v.getLocationInWindow(loc)
+        val left = (loc[0] - loc2[0]).toFloat()
+        val top = (loc[1] - loc2[1]).toFloat()
+        tmp.set(left, top, left + v.width * v.scaleX, top + v.height * v.scaleY)
+    }
+
     private fun updateLens() {
         val l = lens ?: return
-        val pv = playerView ?: return
-        val on = progress >= 0.999f && controls.visibility == View.VISIBLE && controls.alpha > 0.02f
-        if (!on) {
+        if (playerView == null) return
+        val menuOn = menuScrim.visibility == View.VISIBLE && menuScroll.alpha > 0.02f
+        val buttonsOn = progress >= 0.999f && controls.visibility == View.VISIBLE && controls.alpha > 0.02f
+        if (!menuOn && !buttonsOn) {
             l.clear()
             return
         }
-        pv.getLocationInWindow(loc2)
-        buttons.forEachIndexed { i, b ->
-            b.getLocationInWindow(loc)
-            val left = (loc[0] - loc2[0]).toFloat()
-            val top = (loc[1] - loc2[1]).toFloat()
-            val w = b.width * b.scaleX
-            val h = b.height * b.scaleY
-            l.setSlot(i, left, top, left + w, top + h, h / 2f, dpf(1.5f), controls.alpha)
+        if (menuOn) {
+            lensRect(menuScroll)
+            l.setSlot(0, tmp.left, tmp.top, tmp.right, tmp.bottom, dpf(22f), dpf(6f), menuScroll.alpha)
+            for (i in 1 until 6) l.clearSlot(i)
+        } else {
+            buttons.forEachIndexed { i, b ->
+                lensRect(b)
+                l.setSlot(i, tmp.left, tmp.top, tmp.right, tmp.bottom, tmp.height() / 2f, dpf(1.5f), controls.alpha * b.alpha)
+            }
         }
         l.setTop(0f, 0f, 0f, 0, 0f, false)
         l.apply()
@@ -295,6 +350,9 @@ class PlayerSheet(
     fun open(url: String) {
         val wasOpen = isOpen
         view.visibility = View.VISIBLE
+        videoBox.translationY = 0f
+        videoBox.alpha = 1f
+        host.onMiniOffset(0f, 1f)
         ensurePlayerView()
         if (!wasOpen) {
             progress = 0f
@@ -313,27 +371,40 @@ class PlayerSheet(
     fun collapse() {
         if (fullscreen) exitFullscreen()
         hideMenuNow()
+        if (commentsPanel.visibility == View.VISIBLE) closeComments()
+        hideControls(fast = true)
         animateTo(0f)
     }
 
     fun close() {
+        savePosition()
         loadJob?.cancel()
         service?.stopPlayback()
         currentUrl = null
+        currentId = null
         progressAnim?.cancel()
         view.visibility = View.GONE
+        videoBox.translationY = 0f
+        videoBox.alpha = 1f
+        videoBox.scaleX = 1f
+        videoBox.scaleY = 1f
         progress = 0f
+        host.onMiniOffset(0f, 1f)
         host.onSheetProgress(0f)
         host.onNowPlaying(null)
         host.onSheetClosed()
     }
 
-    /** Back: menu, fullscreen, then collapse. False if there was nothing to do. */
+    /** Back: menu, comments, fullscreen, then collapse. False if there was nothing to do. */
     fun handleBack(): Boolean {
         if (!isOpen) return false
         return when {
             menuScrim.visibility == View.VISIBLE -> {
                 hideMenu()
+                true
+            }
+            commentsPanel.visibility == View.VISIBLE -> {
+                closeComments()
                 true
             }
             fullscreen -> {
@@ -348,20 +419,29 @@ class PlayerSheet(
         }
     }
 
+    /** Emphasized easing: quick start, long gentle stop at both ends of the travel. */
+    private val sheetEase = PathInterpolator(0.2f, 0f, 0f, 1f)
+
     private fun animateTo(target: Float) {
         progressAnim?.cancel()
         val start = progress
         if (start == target) {
             setProgress(target)
+            if (target >= 1f) revealControls()
             return
         }
+        if (target < 1f) hideControls(fast = true)
         progressAnim = ValueAnimator.ofFloat(start, target).apply {
-            duration = (260 + 160 * abs(target - start)).toLong()
-            interpolator = DecelerateInterpolator(1.8f)
+            duration = (300 + 220 * abs(target - start)).toLong()
+            interpolator = sheetEase
             addUpdateListener { setProgress(it.animatedValue as Float) }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    if (progress >= 0.999f) revealControls()
+                }
+            })
             start()
         }
-        if (target >= 1f) showControls(autoHide = true)
     }
 
     private fun setProgress(f: Float) {
@@ -386,13 +466,18 @@ class PlayerSheet(
             val bottom = h - host.navBottom() - dpf(12f + 56f + 8f + 7f)
             miniRect.set(dpf(23f), bottom - mh, dpf(23f) + mh * 16f / 9f, bottom)
         }
-        val l = lerp(miniRect.left, fullRect.left, f)
-        val t = lerp(miniRect.top, fullRect.top, f)
-        val r = lerp(miniRect.right, fullRect.right, f)
-        val b = lerp(miniRect.bottom, fullRect.bottom, f)
+        // size follows the progress, the centre moves on an arc (sideways first)
+        val fx = 1f - (1f - f).pow(1.7f)
+        val fy = f.pow(1.25f)
+        val nwF = lerp(miniRect.width(), fullRect.width(), f)
+        val nhF = lerp(miniRect.height(), fullRect.height(), f)
+        val cx = lerp(miniRect.centerX(), fullRect.centerX(), fx)
+        val cy = lerp(miniRect.centerY(), fullRect.centerY(), fy)
+        val l = cx - nwF / 2f
+        val t = cy - nhF / 2f
         val lp = videoBox.layoutParams as FrameLayout.LayoutParams
-        val nw = (r - l).toInt()
-        val nh = (b - t).toInt()
+        val nw = nwF.toInt()
+        val nh = nhF.toInt()
         if (lp.width != nw || lp.height != nh || lp.leftMargin != l.toInt() || lp.topMargin != t.toInt()) {
             lp.width = nw
             lp.height = nh
@@ -418,26 +503,29 @@ class PlayerSheet(
         details.translationY = (1f - f) * dpf(220f)
         val top = fullRect.bottom.toInt()
         if (details.paddingTop != top) details.setPadding(0, top, 0, host.navBottom() + dp(16))
-        val late = ((f - 0.75f) / 0.25f).coerceIn(0f, 1f)
-        seek.alpha = late
-        timeRow.alpha = late * (if (controlsShown) 1f else 0f)
-        if (f < 0.999f) {
-            controls.visibility = View.INVISIBLE
-        } else if (controlsShown) {
-            controls.visibility = View.VISIBLE
+        val cp = commentsPanel.layoutParams as FrameLayout.LayoutParams
+        if (cp.topMargin != top) {
+            cp.topMargin = top
+            commentsPanel.layoutParams = cp
         }
+        val late = ((f - 0.8f) / 0.2f).coerceIn(0f, 1f)
+        seek.alpha = late
         seek.visibility = if (late > 0f) View.VISIBLE else View.INVISIBLE
+        if (f < 0.999f && controls.visibility == View.VISIBLE && !controlsShown) controls.visibility = View.INVISIBLE
+        updateLoading()
     }
 
     private fun lerp(a: Float, b: Float, f: Float) = a + (b - a) * f
 
     // ================================================================ touch on the video
 
+    private enum class Drag { NONE, SHEET, DISMISS, FULL_UP, FULL_DOWN }
+
     private val slop = ViewConfiguration.get(activity).scaledTouchSlop
     private var downX = 0f
     private var downY = 0f
     private var startProgress = 0f
-    private var dragging = false
+    private var drag = Drag.NONE
     private var velocity: VelocityTracker? = null
 
     private val gestures = GestureDetector(activity, object : GestureDetector.SimpleOnGestureListener() {
@@ -460,9 +548,10 @@ class PlayerSheet(
         override fun onDoubleTap(e: MotionEvent): Boolean {
             if (progress < 0.999f) return true
             val third = videoBox.width / 3f
+            val step = settings.seekStep * 1000L
             when {
-                e.x < third -> seekBy(-10_000)
-                e.x > third * 2 -> seekBy(10_000)
+                e.x < third -> seekBy(-step)
+                e.x > third * 2 -> seekBy(step)
                 else -> togglePlay()
             }
             return true
@@ -478,7 +567,7 @@ class PlayerSheet(
                 downX = ev.rawX
                 downY = ev.rawY
                 startProgress = progress
-                dragging = false
+                drag = Drag.NONE
                 velocity?.recycle()
                 velocity = VelocityTracker.obtain()
                 velocity?.addMovement(ev)
@@ -488,32 +577,74 @@ class PlayerSheet(
                 velocity?.addMovement(ev)
                 val dx = ev.rawX - downX
                 val dy = ev.rawY - downY
-                if (!dragging && !fullscreen && abs(dy) > slop && abs(dy) > abs(dx)) {
-                    dragging = true
-                    progressAnim?.cancel()
-                    val cancel = MotionEvent.obtain(ev)
-                    cancel.action = MotionEvent.ACTION_CANCEL
-                    gestures.onTouchEvent(cancel)
-                    cancel.recycle()
-                    if (controlsShown) hideControls()
+                if (drag == Drag.NONE && abs(dy) > slop && abs(dy) > abs(dx)) {
+                    drag = when {
+                        fullscreen -> if (dy > 0) Drag.FULL_DOWN else Drag.NONE
+                        startProgress < 0.01f -> if (dy > 0) Drag.DISMISS else Drag.SHEET
+                        startProgress > 0.99f && dy < 0 -> Drag.FULL_UP
+                        else -> Drag.SHEET
+                    }
+                    if (drag != Drag.NONE) {
+                        progressAnim?.cancel()
+                        val cancel = MotionEvent.obtain(ev)
+                        cancel.action = MotionEvent.ACTION_CANCEL
+                        gestures.onTouchEvent(cancel)
+                        cancel.recycle()
+                        if (drag == Drag.SHEET && controlsShown) hideControls(fast = true)
+                    }
                 }
-                if (dragging) setProgress(startProgress - dy / travel()) else gestures.onTouchEvent(ev)
+                when (drag) {
+                    Drag.SHEET -> setProgress(startProgress - dy / travel())
+                    Drag.DISMISS -> {
+                        val off = dy.coerceAtLeast(0f)
+                        val a = (1f - off / dpf(160f)).coerceIn(0f, 1f)
+                        videoBox.translationY = off
+                        videoBox.alpha = a
+                        host.onMiniOffset(off, a)
+                    }
+                    Drag.FULL_UP -> {
+                        // a hint of the turn to come: the video grows a little
+                        val s = 1f + (-dy / dpf(900f)).coerceIn(0f, 0.08f)
+                        videoBox.pivotY = videoBox.height.toFloat()
+                        videoBox.scaleX = s
+                        videoBox.scaleY = s
+                    }
+                    Drag.FULL_DOWN -> {
+                        videoBox.translationY = dy.coerceAtLeast(0f) * 0.35f
+                        videoBox.scaleX = 1f - (dy / dpf(3000f)).coerceIn(0f, 0.08f)
+                        videoBox.scaleY = videoBox.scaleX
+                    }
+                    Drag.NONE -> gestures.onTouchEvent(ev)
+                }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                if (dragging) {
-                    velocity?.addMovement(ev)
-                    velocity?.computeCurrentVelocity(1000)
-                    val vy = velocity?.yVelocity ?: 0f
-                    val target = when {
-                        vy > 900 -> 0f
-                        vy < -900 -> 1f
-                        else -> if (progress > 0.5f) 1f else 0f
+                velocity?.addMovement(ev)
+                velocity?.computeCurrentVelocity(1000)
+                val vy = velocity?.yVelocity ?: 0f
+                val dy = ev.rawY - downY
+                when (drag) {
+                    Drag.SHEET -> {
+                        val target = when {
+                            vy > 900 -> 0f
+                            vy < -900 -> 1f
+                            else -> if (progress > 0.5f) 1f else 0f
+                        }
+                        animateTo(target)
                     }
-                    animateTo(target)
-                    dragging = false
-                } else {
-                    gestures.onTouchEvent(ev)
+                    Drag.DISMISS -> {
+                        if (dy > dpf(56f) || vy > 800) dismissMini() else springBackMini()
+                    }
+                    Drag.FULL_UP -> {
+                        springBackScale()
+                        if (dy < -dpf(50f) || vy < -900) enterFullscreen(rotate = true)
+                    }
+                    Drag.FULL_DOWN -> {
+                        springBackScale()
+                        if (dy > dpf(50f) || vy > 900) exitFullscreen()
+                    }
+                    Drag.NONE -> gestures.onTouchEvent(ev)
                 }
+                drag = Drag.NONE
                 velocity?.recycle()
                 velocity = null
             }
@@ -521,20 +652,66 @@ class PlayerSheet(
         return true
     }
 
-    /** The mini player's own touches (outside the video): tap or swipe up expands. */
-    @SuppressLint("ClickableViewAccessibility")
+    private fun springBackScale() {
+        videoBox.animate().scaleX(1f).scaleY(1f).translationY(0f).setDuration(320)
+            .setInterpolator(OvershootInterpolator(1.4f)).start()
+    }
+
+    private fun springBackMini() {
+        val start = videoBox.translationY
+        ValueAnimator.ofFloat(start, 0f).apply {
+            duration = 300
+            interpolator = OvershootInterpolator(1.2f)
+            addUpdateListener {
+                val off = it.animatedValue as Float
+                val a = (1f - off / dpf(160f)).coerceIn(0f, 1f)
+                videoBox.translationY = off
+                videoBox.alpha = a
+                host.onMiniOffset(off, a)
+            }
+            start()
+        }
+    }
+
+    /** Mini player swiped away: it sinks, shrinks and fades out, then playback stops. */
+    private fun dismissMini() {
+        val start = videoBox.translationY
+        ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 280
+            interpolator = DecelerateInterpolator(1.5f)
+            addUpdateListener {
+                val t = it.animatedValue as Float
+                val off = start + (dpf(140f) - start) * t
+                val a = (1f - t) * (1f - start / dpf(160f)).coerceIn(0f, 1f)
+                videoBox.translationY = off
+                videoBox.alpha = a
+                videoBox.scaleX = 1f - 0.15f * t
+                videoBox.scaleY = 1f - 0.15f * t
+                host.onMiniOffset(off, a)
+            }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    close()
+                }
+            })
+            start()
+        }
+    }
+
+    /** The mini player's own touches (outside the video): tap, swipe up or swipe away. */
     fun forwardMiniTouch(ev: MotionEvent): Boolean = onVideoTouch(ev)
 
     // ================================================================ controls
 
     @SuppressLint("ClickableViewAccessibility")
     private fun setupControls() {
-        for (id in listOf(R.id.icDown, R.id.icSettings, R.id.icBack10, R.id.icPlay, R.id.icFwd10, R.id.icFull)) {
+        for (id in listOf(R.id.icDown, R.id.icSettings, R.id.icBack10, R.id.icFwd10, R.id.icFull)) {
             view.findViewById<ImageView>(id).setColorFilter(Color.WHITE)
         }
+        icPlay.setColor(Color.WHITE)
         press(view.findViewById(R.id.btnPlay)) { togglePlay() }
-        press(view.findViewById(R.id.btnBack10)) { seekBy(-10_000) }
-        press(view.findViewById(R.id.btnFwd10)) { seekBy(10_000) }
+        press(view.findViewById(R.id.btnBack10)) { seekBy(-settings.seekStep * 1000L) }
+        press(view.findViewById(R.id.btnFwd10)) { seekBy(settings.seekStep * 1000L) }
         press(view.findViewById(R.id.btnFull)) { if (fullscreen) exitFullscreen() else enterFullscreen(rotate = true) }
         press(view.findViewById(R.id.btnSettings)) { showMenu() }
         press(view.findViewById(R.id.btnDown)) { collapse() }
@@ -584,31 +761,69 @@ class PlayerSheet(
         p.seekTo(target.coerceAtLeast(0))
     }
 
-    private fun updatePlayIcon() {
-        icPlay.setImageResource(if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
+    private fun updatePlayIcon(animate: Boolean = true) {
+        val p = service?.player
+        // shows "pause" while playing or about to play
+        val pause = p != null && p.playWhenReady && p.playbackState != Player.STATE_ENDED && p.playbackState != Player.STATE_IDLE
+        icPlay.setPause(pause, animate)
+    }
+
+    /** The spinner only when the controls are hidden (never inside the play button). */
+    private fun updateLoading() {
+        val show = (buffering || loadingInfo) && (!controlsShown || progress < 0.999f) && progress > 0.5f
+        loading.visibility = if (show) View.VISIBLE else View.GONE
+    }
+
+    /** Controls appear once the player is fully open: the buttons pop in one after the other. */
+    private fun revealControls() {
+        if (progress < 0.999f) return
+        controlsShown = true
+        controls.visibility = View.VISIBLE
+        controls.alpha = 0f
+        controls.animate().alpha(1f).setDuration(220).start()
+        buttons.forEachIndexed { i, b ->
+            b.scaleX = 0.6f
+            b.scaleY = 0.6f
+            b.alpha = 0f
+            b.animate().scaleX(1f).scaleY(1f).alpha(1f).setStartDelay(30L * i).setDuration(360)
+                .setInterpolator(OvershootInterpolator(1.8f))
+                .withEndAction { b.animate().setStartDelay(0) }
+                .start()
+        }
+        timeRow.alpha = 0f
+        timeRow.animate().alpha(1f).setDuration(260).start()
+        seek.restThickness = dpf(4f)
+        seek.restGlow = 0.55f
+        updateLoading()
+        hideJob?.cancel()
+        if (isPlaying) scheduleHide()
     }
 
     private fun showControls(autoHide: Boolean) {
+        if (progress < 0.999f) return
         controlsShown = true
-        if (progress >= 0.999f) controls.visibility = View.VISIBLE
+        controls.visibility = View.VISIBLE
         controls.animate().alpha(1f).setDuration(160).start()
-        timeRow.animate().alpha(if (progress >= 0.999f) 1f else 0f).setDuration(160).start()
+        for (b in buttons) if (b.alpha < 1f && b.animation == null) b.alpha = 1f
+        timeRow.animate().alpha(1f).setDuration(160).start()
         seek.restThickness = dpf(4f)
         seek.restGlow = 0.55f
+        updateLoading()
         hideJob?.cancel()
         if (autoHide) scheduleHide()
     }
 
-    private fun hideControls() {
+    private fun hideControls(fast: Boolean = false) {
         if (seek.scrubbing) return
         controlsShown = false
         hideJob?.cancel()
-        controls.animate().alpha(0f).setDuration(220).withEndAction {
+        controls.animate().alpha(0f).setDuration(if (fast) 90 else 220).withEndAction {
             if (!controlsShown) controls.visibility = View.INVISIBLE
         }.start()
-        timeRow.animate().alpha(0f).setDuration(220).start()
+        timeRow.animate().alpha(0f).setDuration(if (fast) 90 else 220).start()
         seek.restThickness = dpf(3f)
         seek.restGlow = 0f
+        updateLoading()
     }
 
     private fun scheduleHide() {
@@ -618,6 +833,8 @@ class PlayerSheet(
             if (isPlaying && menuScrim.visibility != View.VISIBLE) hideControls()
         }
     }
+
+    private var lastSave = 0L
 
     private fun startProgressLoop() {
         progressJob?.cancel()
@@ -633,10 +850,23 @@ class PlayerSheet(
                         timeNow.text = clock(p.currentPosition)
                         timeTotal.text = if (dur > 0) clock(dur) else ""
                     }
+                    val now = System.currentTimeMillis()
+                    if (p.isPlaying && now - lastSave > 5000) {
+                        lastSave = now
+                        savePosition()
+                    }
                 }
                 delay(200)
             }
         }
+    }
+
+    private fun savePosition() {
+        val id = currentId ?: return
+        val p = service?.player ?: return
+        if (service?.currentUrl != currentUrl) return
+        if (!settings.resume) return
+        store.savePosition(id, p.currentPosition, p.duration)
     }
 
     private fun clock(ms: Long): String {
@@ -662,27 +892,33 @@ class PlayerSheet(
         icFull.setImageResource(if (fullscreen) R.drawable.ic_fullscreen_exit else R.drawable.ic_fullscreen)
     }
 
-    // ================================================================ settings menu
+    // ================================================================ settings menu (liquid glass over the video)
 
     private fun menuCard() {
+        val lensOn = lens != null
         val fill = GradientDrawable().apply {
             cornerRadius = dpf(22f)
-            setColor(Color.argb(215, 28, 30, 36))
+            setColor(if (lensOn) Color.argb(120, 22, 24, 30) else Color.argb(215, 28, 30, 36))
         }
         val skin = GlassSkinDrawable(density)
         skin.cornerRadius = dpf(22f)
-        skin.setTint(0.5f, null)
+        skin.setTint(if (lensOn) 0.4f else 0.5f, null)
         skin.setRim(true)
         skin.setContentColor(Color.WHITE)
-        menu.background = LayerDrawable(arrayOf(fill, skin))
-        menu.clipToOutline = true
+        menuScroll.background = LayerDrawable(arrayOf(fill, skin))
+        menuScroll.outlineProvider = object : ViewOutlineProvider() {
+            override fun getOutline(v: View, outline: Outline) {
+                outline.setRoundRect(0, 0, v.width, v.height, dpf(22f))
+            }
+        }
+        menuScroll.clipToOutline = true
     }
 
     private fun menuRow(icon: Int, title: String, value: String?, check: Boolean = false, click: () -> Unit): View {
         val row = LinearLayout(activity)
         row.orientation = LinearLayout.HORIZONTAL
         row.gravity = Gravity.CENTER_VERTICAL
-        row.setPadding(dp(16), dp(12), dp(16), dp(12))
+        row.setPadding(dp(16), dp(11), dp(16), dp(11))
         val ta = activity.obtainStyledAttributes(intArrayOf(android.R.attr.selectableItemBackground))
         row.background = ta.getDrawable(0)
         ta.recycle()
@@ -696,12 +932,14 @@ class PlayerSheet(
         tv.text = title
         tv.textSize = 15f
         tv.setTextColor(Color.WHITE)
+        tv.setShadowLayer(4f, 0f, 1f, Color.argb(120, 0, 0, 0))
         row.addView(tv, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         if (value != null) {
             val v = TextView(activity)
             v.text = value
             v.textSize = 14f
-            v.setTextColor(Color.argb(170, 255, 255, 255))
+            v.setTextColor(Color.argb(200, 255, 255, 255))
+            v.setShadowLayer(4f, 0f, 1f, Color.argb(120, 0, 0, 0))
             row.addView(v)
         }
         if (check) {
@@ -714,28 +952,58 @@ class PlayerSheet(
         return row
     }
 
+    /** Fits the menu into the video (scrolls when longer) with a small resize animation. */
+    private fun fitMenu() {
+        menuScroll.post {
+            val max = (videoBox.height - dp(20)).coerceAtLeast(dp(120))
+            menu.measure(
+                View.MeasureSpec.makeMeasureSpec(menuScroll.width.coerceAtLeast(dp(250)), View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+            )
+            val target = menu.measuredHeight.coerceAtMost(max)
+            val start = menuScroll.height
+            val lp = menuScroll.layoutParams
+            if (start <= 0) {
+                lp.height = target
+                menuScroll.layoutParams = lp
+                return@post
+            }
+            ValueAnimator.ofInt(start, target).apply {
+                duration = 220
+                interpolator = DecelerateInterpolator(1.5f)
+                addUpdateListener {
+                    lp.height = it.animatedValue as Int
+                    menuScroll.layoutParams = lp
+                }
+                start()
+            }
+        }
+    }
+
     private fun showMenu() {
         menuCard()
         fillMainMenu()
-        val lp = menu.layoutParams as FrameLayout.LayoutParams
-        lp.topMargin = (fullRect.top + dpf(56f)).toInt()
-        lp.marginEnd = dp(12)
-        menu.layoutParams = lp
         menuScrim.visibility = View.VISIBLE
-        menu.pivotX = dpf(250f)
-        menu.pivotY = 0f
-        menu.alpha = 0f
-        menu.scaleX = 0.7f
-        menu.scaleY = 0.7f
-        menu.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(280).setInterpolator(OvershootInterpolator(1.1f)).start()
+        menuScroll.pivotX = dpf(240f)
+        menuScroll.pivotY = 0f
+        menuScroll.alpha = 0f
+        menuScroll.scaleX = 0.6f
+        menuScroll.scaleY = 0.6f
+        menuScroll.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(320)
+            .setInterpolator(OvershootInterpolator(1.2f)).start()
+        // the menu replaces the buttons while it is open
+        controls.animate().alpha(0f).setDuration(120).start()
         hideJob?.cancel()
     }
 
     private fun hideMenu() {
-        menu.animate().alpha(0f).scaleX(0.85f).scaleY(0.85f).setDuration(150).withEndAction {
+        menuScroll.animate().alpha(0f).scaleX(0.8f).scaleY(0.8f).setDuration(160).withEndAction {
             menuScrim.visibility = View.GONE
+            val lp = menuScroll.layoutParams
+            lp.height = ViewGroup.LayoutParams.WRAP_CONTENT
+            menuScroll.layoutParams = lp
         }.start()
-        if (isPlaying) scheduleHide()
+        showControls(autoHide = isPlaying)
     }
 
     private fun hideMenuNow() {
@@ -754,9 +1022,7 @@ class PlayerSheet(
             if (!g.isTrackSupported(0)) continue
             val side = minOf(f.width, f.height)
             val fps = if (f.frameRate > 40f) "60" else ""
-            val transfer = f.colorInfo?.colorTransfer
-            val hdr = transfer == C.COLOR_TRANSFER_ST2084 || transfer == C.COLOR_TRANSFER_HLG
-            out.add(Quality("${side}p$fps" + if (hdr) " HDR" else "", side, g, g.isSelected))
+            out.add(Quality("${side}p$fps", side, g, g.isSelected))
         }
         return out.sortedByDescending { it.side }
     }
@@ -770,21 +1036,14 @@ class PlayerSheet(
         val current = qs.firstOrNull { it.selected }?.label
         val qValue = if (manualQuality()) current else activity.getString(R.string.auto) + (current?.let { " ($it)" } ?: "")
         menu.addView(menuRow(R.drawable.ic_settings, activity.getString(R.string.quality), qValue) { fillQualityMenu() })
-
-        val hdrOk = HdrStreams.deviceSupports(activity)
-        val hdrValue = when {
-            !hdrOk -> activity.getString(R.string.not_supported)
-            settings.hdr && service?.currentHdr?.isEmpty() == true -> activity.getString(R.string.hdr_none_for_video)
-            settings.hdr -> activity.getString(R.string.on)
-            else -> activity.getString(R.string.off)
-        }
-        menu.addView(menuRow(R.drawable.ic_hdr, activity.getString(R.string.hdr), hdrValue) {
-            if (!hdrOk) return@menuRow
-            setHdr(!settings.hdr)
-            fillMainMenu()
-        })
         val speed = service?.player?.playbackParameters?.speed ?: 1f
         menu.addView(menuRow(R.drawable.ic_speed, activity.getString(R.string.speed), speedLabel(speed)) { fillSpeedMenu() })
+        val loop = service?.player?.repeatMode == Player.REPEAT_MODE_ONE
+        menu.addView(menuRow(R.drawable.ic_replay10, activity.getString(R.string.loop_video), activity.getString(if (loop) R.string.on else R.string.off)) {
+            service?.player?.repeatMode = if (loop) Player.REPEAT_MODE_OFF else Player.REPEAT_MODE_ONE
+            fillMainMenu()
+        })
+        fitMenu()
     }
 
     private fun speedLabel(s: Float): String = if (s == s.toInt().toFloat()) "${s.toInt()}×" else "${s}×"
@@ -793,7 +1052,7 @@ class PlayerSheet(
         menu.removeAllViews()
         menu.addView(menuRow(R.drawable.ic_back, activity.getString(R.string.quality), null) { fillMainMenu() })
         val manual = manualQuality()
-        menu.addView(menuRow(0, activity.getString(R.string.auto) + " (≤ ${settings.maxQuality}p)", null, check = !manual) {
+        menu.addView(menuRow(0, activity.getString(R.string.auto) + " (≤ ${settings.effectiveMaxQuality()}p)", null, check = !manual) {
             service?.applyQualityLimit()
             hideMenu()
         })
@@ -808,6 +1067,7 @@ class PlayerSheet(
                 hideMenu()
             })
         }
+        fitMenu()
     }
 
     private fun fillSpeedMenu() {
@@ -820,56 +1080,33 @@ class PlayerSheet(
                 hideMenu()
             })
         }
+        fitMenu()
     }
 
-    private fun setHdr(on: Boolean) {
-        settings.hdr = on
-        ensurePlayerView()
-        val svc = service ?: return
-        val info = svc.currentInfo ?: return
-        if (!on) {
-            svc.reload(emptyList())
-            return
-        }
-        activity.lifecycleScope.launch {
-            val hdr = withContext(Dispatchers.IO) { fetchHdr(info) }
-            if (service?.currentInfo === info) {
-                svc.reload(hdr)
-                if (hdr.isEmpty()) Toast.makeText(activity, R.string.hdr_none_for_video, Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    /** Called when the HDR setting changed elsewhere (settings page). */
+    /** Settings changed on the settings page. */
     fun onSettingsChanged() {
-        if (isOpen) ensurePlayerView()
-    }
-
-    private fun fetchHdr(info: StreamInfo): List<HdrStream> {
-        if (!settings.hdr || !HdrStreams.deviceSupports(activity)) return emptyList()
-        val id = Video.idOf(info.url) ?: info.id ?: return emptyList()
-        return try {
-            HdrStreams.fetch(id)
-        } catch (e: Exception) {
-            emptyList()
-        }
+        service?.let { if (!manualQuality()) it.applyQualityLimit() }
     }
 
     // ================================================================ loading
 
     private fun load(url: String) {
         if (url == currentUrl) return
+        savePosition()
         currentUrl = url
+        currentId = Video.idOf(url)
+        nextUp = null
+        resetComments()
         details.scrollToPosition(0)
         val svc = service
         val info = svc?.currentInfo
         if (svc != null && svc.currentUrl == url && info != null) {
             showDetails(info, record = false)
             host.onNowPlaying(info)
-            loading.visibility = View.GONE
             return
         }
-        loading.visibility = View.VISIBLE
+        loadingInfo = true
+        updateLoading()
         adapter.submit(listOf(Row.Loading))
         loadJob?.cancel()
         loadJob = activity.lifecycleScope.launch {
@@ -878,38 +1115,41 @@ class PlayerSheet(
                 if (currentUrl != url) return@launch
                 showDetails(result, record = true)
                 host.onNowPlaying(result)
-                val hdr = withContext(Dispatchers.IO) { fetchHdr(result) }
-                if (currentUrl != url) return@launch
-                startPlayback(result, hdr)
+                val id = Video.idOf(result.url) ?: currentId
+                val start = if (settings.resume && id != null) store.position(id) else 0L
+                startPlayback(result, start)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 if (currentUrl != url) return@launch
-                loading.visibility = View.GONE
                 adapter.submit(
                     listOf(Row.Message(Errors.text(activity, e), activity.getString(R.string.retry)) {
                         currentUrl = null
                         load(url)
                     })
                 )
+            } finally {
+                if (currentUrl == url) {
+                    loadingInfo = false
+                    updateLoading()
+                }
             }
         }
     }
 
-    private fun startPlayback(info: StreamInfo, hdr: List<HdrStream>) {
+    private fun startPlayback(info: StreamInfo, startMs: Long) {
         val svc = service
         if (svc == null) {
             pendingInfo = info
-            pendingHdr = hdr
+            pendingStart = startMs
             return
         }
         askNotificationPermission()
         try {
-            svc.play(info, hdr)
+            svc.play(info, startMs)
             setVideoEnabled(true)
-            showControls(autoHide = true)
+            if (progress >= 0.999f) showControls(autoHide = true)
         } catch (e: Exception) {
-            loading.visibility = View.GONE
             Toast.makeText(activity, activity.getString(R.string.playback_error, Errors.text(activity, e)), Toast.LENGTH_LONG).show()
         }
     }
@@ -928,6 +1168,8 @@ class PlayerSheet(
 
     // ================================================================ details
 
+    private var commentsCard: View? = null
+
     private fun showDetails(info: StreamInfo, record: Boolean) {
         val v = LayoutInflater.from(activity).inflate(R.layout.item_details, details, false)
         v.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -937,9 +1179,7 @@ class PlayerSheet(
         val views = if (info.viewCount >= 0) {
             activity.getString(if (live) R.string.watching else R.string.views, Format.count(activity, info.viewCount))
         } else null
-        val likes = if (info.likeCount > 0) activity.getString(R.string.likes, Format.count(activity, info.likeCount)) else null
-        v.findViewById<TextView>(R.id.meta).text =
-            Format.joinDot(views, Format.date(info.uploadDate, info.textualUploadDate), likes)
+        v.findViewById<TextView>(R.id.meta).text = Format.joinDot(views, Format.date(info.uploadDate, info.textualUploadDate))
 
         v.findViewById<TextView>(R.id.channel).text = info.uploaderName
         val subs = v.findViewById<TextView>(R.id.subs)
@@ -954,9 +1194,14 @@ class PlayerSheet(
         }
 
         val actions = v.findViewById<LinearLayout>(R.id.actions)
-        addAction(actions, R.drawable.ic_headphones, R.string.action_background) { activity.moveTaskToBack(true) }
-        addAction(actions, R.drawable.ic_share, R.string.action_share) { share(info) }
-        addAction(actions, R.drawable.ic_open, R.string.action_open_youtube) { openInYoutube(info.url) }
+        baseLikes = info.likeCount
+        likeStatus = "INDIFFERENT"
+        likePill = addAction(actions, R.drawable.ic_like, null) { rate(if (likeStatus == "LIKE") "INDIFFERENT" else "LIKE") }
+        dislikePill = addAction(actions, R.drawable.ic_dislike, null) { rate(if (likeStatus == "DISLIKE") "INDIFFERENT" else "DISLIKE") }
+        updateRatingUi(animate = false)
+        addAction(actions, R.drawable.ic_headphones, activity.getString(R.string.action_background)) { activity.moveTaskToBack(true) }
+        addAction(actions, R.drawable.ic_share, activity.getString(R.string.action_share)) { share(info) }
+        addAction(actions, R.drawable.ic_open, activity.getString(R.string.action_open_youtube)) { openInYoutube(info.url) }
 
         val desc = v.findViewById<TextView>(R.id.description)
         val text = descriptionText(info.description)
@@ -980,8 +1225,8 @@ class PlayerSheet(
                 val end = desc.measuredHeight
                 if (!expanded) desc.maxLines = Int.MAX_VALUE
                 anim = ValueAnimator.ofInt(start, end).apply {
-                    duration = (220 + abs(end - start) / density * 0.6f).toLong().coerceAtMost(520)
-                    interpolator = DecelerateInterpolator(1.6f)
+                    duration = (240 + abs(end - start) / density * 0.6f).toLong().coerceAtMost(540)
+                    interpolator = PathInterpolator(0.2f, 0f, 0f, 1f)
                     addUpdateListener {
                         desc.layoutParams = desc.layoutParams.apply { height = it.animatedValue as Int }
                     }
@@ -996,7 +1241,14 @@ class PlayerSheet(
             }
         }
 
+        val card = v.findViewById<View>(R.id.commentsCard)
+        card.background = Glass.pill(activity, 18f * density)
+        card.setOnClickListener { openComments() }
+        commentsCard = card
+        v.findViewById<TextView>(R.id.commentPreview).text = activity.getString(R.string.loading_comments)
+
         val related = info.relatedItems.filterIsInstance<StreamInfoItem>().mapNotNull { Video.from(activity, it) }
+        nextUp = related.firstOrNull { !it.isShort && !it.isLive }
         v.findViewById<View>(R.id.related).visibility = if (related.isEmpty()) View.GONE else View.VISIBLE
 
         val rows = ArrayList<Row>()
@@ -1011,26 +1263,19 @@ class PlayerSheet(
                 store.saveRelated(video.id, related.filter { !it.isShort })
             }
         }
+        loadCommentsPreview(info.url)
+        loadRating(info)
     }
 
-    private fun descriptionText(d: Description?): CharSequence {
-        d ?: return ""
-        val content = d.content()
-        return when (d.type()) {
-            Description.Type.HTML -> Html.fromHtml(content, Html.FROM_HTML_MODE_COMPACT).toString().trim()
-            else -> content.trim()
-        }
-    }
-
-    private fun addAction(parent: LinearLayout, icon: Int, label: Int, onClick: () -> Unit) {
+    private fun addAction(parent: LinearLayout, icon: Int, label: String?, onClick: () -> Unit): TextView {
         val text = Glass.textColor(activity)
         val tv = TextView(activity)
-        tv.text = activity.getString(label)
+        tv.text = label
         tv.textSize = 14f
         tv.setTextColor(text)
         tv.gravity = Gravity.CENTER_VERTICAL
-        tv.setPadding(dp(14), dp(9), dp(16), dp(9))
-        tv.compoundDrawablePadding = dp(8)
+        tv.setPadding(dp(14), dp(9), if (label.isNullOrEmpty()) dp(14) else dp(16), dp(9))
+        tv.compoundDrawablePadding = if (label.isNullOrEmpty()) 0 else dp(8)
         val d = ContextCompat.getDrawable(activity, icon)?.mutate()
         d?.setBounds(0, 0, dp(18), dp(18))
         d?.setTint(text)
@@ -1041,6 +1286,191 @@ class PlayerSheet(
         lp.marginStart = dp(4)
         lp.marginEnd = dp(4)
         parent.addView(tv, lp)
+        return tv
+    }
+
+    // ================================================================ like / dislike
+
+    private fun loadRating(info: StreamInfo) {
+        if (!Account.isSignedIn(activity)) return
+        val id = Video.idOf(info.url) ?: return
+        activity.lifecycleScope.launch {
+            val status = try {
+                withContext(Dispatchers.IO) { Innertube.likeStatus(activity, id) }
+            } catch (e: Exception) {
+                null
+            }
+            if (status != null && currentId == id) {
+                likeStatus = status
+                updateRatingUi(animate = false)
+            }
+        }
+    }
+
+    private fun rate(status: String) {
+        if (!Account.isSignedIn(activity)) {
+            Toast.makeText(activity, R.string.sign_in_to_rate, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val id = currentId ?: return
+        val old = likeStatus
+        likeStatus = status
+        updateRatingUi(animate = true)
+        activity.lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) { Innertube.rate(activity, id, status) }
+            } catch (e: Exception) {
+                if (currentId == id) {
+                    likeStatus = old
+                    updateRatingUi(animate = false)
+                }
+                Toast.makeText(activity, Errors.text(activity, e), Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun updateRatingUi(animate: Boolean) {
+        val text = Glass.textColor(activity)
+        val accent = ContextCompat.getColor(activity, R.color.accent)
+        likePill?.let { p ->
+            val liked = likeStatus == "LIKE"
+            val count = if (baseLikes >= 0) baseLikes + (if (liked) 1 else 0) else -1
+            p.text = if (count > 0) Format.count(activity, count) else activity.getString(R.string.like)
+            p.compoundDrawablePadding = dp(8)
+            p.setPadding(dp(14), dp(9), dp(16), dp(9))
+            p.compoundDrawablesRelative[0]?.setTint(if (liked) accent else text)
+            p.setTextColor(if (liked) accent else text)
+            p.setTypeface(null, if (liked) Typeface.BOLD else Typeface.NORMAL)
+            if (animate && liked) pop(p)
+        }
+        dislikePill?.let { p ->
+            val disliked = likeStatus == "DISLIKE"
+            p.compoundDrawablesRelative[0]?.setTint(if (disliked) accent else text)
+            if (animate && disliked) pop(p)
+        }
+    }
+
+    private fun pop(v: View) {
+        v.animate().cancel()
+        v.scaleX = 0.85f
+        v.scaleY = 0.85f
+        v.animate().scaleX(1f).scaleY(1f).setDuration(380).setInterpolator(OvershootInterpolator(3f)).start()
+    }
+
+    // ================================================================ comments
+
+    private fun resetComments() {
+        commentsJob?.cancel()
+        commentsMoreJob?.cancel()
+        commentsInfo = null
+        commentsNext = null
+        commentsPanel.visibility = View.GONE
+    }
+
+    private fun commentRow(c: CommentsInfoItem): Row.Comment {
+        val d = c.commentText
+        val text: CharSequence = when {
+            d == null -> ""
+            d.type() == Description.Type.HTML -> Html.fromHtml(d.content(), Html.FROM_HTML_MODE_COMPACT).toString().trim()
+            else -> d.content().trim()
+        }
+        val likes = c.textualLikeCount?.takeIf { it.isNotBlank() && it != "0" }
+            ?: if (c.likeCount > 0) Format.count(activity, c.likeCount.toLong()) else null
+        return Row.Comment(
+            author = c.uploaderName.orEmpty(),
+            avatar = Format.pick(c.uploaderAvatars, 96),
+            text = text,
+            likes = likes,
+            date = Format.date(c.uploadDate, c.textualUploadDate),
+            replies = c.replyCount.coerceAtLeast(0)
+        )
+    }
+
+    private fun loadCommentsPreview(url: String) {
+        commentsJob?.cancel()
+        commentsJob = activity.lifecycleScope.launch {
+            val card = commentsCard ?: return@launch
+            try {
+                val info = withContext(Dispatchers.IO) { CommentsInfo.getInfo(yt, url) }
+                if (currentUrl != url) return@launch
+                commentsInfo = info
+                commentsNext = info.nextPage
+                val header = card.findViewById<TextView>(R.id.commentsHeader)
+                val count = info.commentsCount
+                header.text = if (count > 0) activity.getString(R.string.comments) + "  " + Format.count(activity, count.toLong())
+                else activity.getString(R.string.comments)
+                val preview = card.findViewById<TextView>(R.id.commentPreview)
+                val first = info.relatedItems.firstOrNull()
+                if (info.isCommentsDisabled || first == null) {
+                    preview.text = activity.getString(R.string.comments_off)
+                    card.findViewById<View>(R.id.commentAvatar).visibility = View.GONE
+                } else {
+                    preview.text = commentRow(first).text
+                    card.findViewById<ImageView>(R.id.commentAvatar).load(Format.pick(first.uploaderAvatars, 64)) {
+                        transformations(CircleCropTransformation())
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                card.findViewById<TextView>(R.id.commentPreview).text = Errors.text(activity, e)
+            }
+        }
+    }
+
+    private fun openComments() {
+        val info = commentsInfo ?: return
+        if (info.isCommentsDisabled) return
+        val count = info.commentsCount
+        commentsTitle.text = if (count > 0) activity.getString(R.string.comments) + "  " + Format.count(activity, count.toLong())
+        else activity.getString(R.string.comments)
+        val rows = ArrayList<Row>()
+        info.relatedItems.forEach { rows.add(commentRow(it)) }
+        if (rows.isEmpty()) rows.add(Row.Message(activity.getString(R.string.nothing_here)))
+        if (Page.isValid(commentsNext)) rows.add(Row.Loading)
+        commentsAdapter.submit(rows)
+        commentsList.setPadding(0, 0, 0, host.navBottom() + dp(16))
+        commentsPanel.visibility = View.VISIBLE
+        commentsPanel.post {
+            commentsPanel.translationY = commentsPanel.height.toFloat()
+            commentsPanel.animate().translationY(0f).setDuration(380).setInterpolator(sheetEase).start()
+        }
+    }
+
+    private fun closeComments() {
+        commentsPanel.animate().translationY(commentsPanel.height.toFloat()).setDuration(260)
+            .setInterpolator(DecelerateInterpolator()).withEndAction { commentsPanel.visibility = View.GONE }.start()
+    }
+
+    private fun loadMoreComments() {
+        val info = commentsInfo ?: return
+        val page = commentsNext ?: return
+        if (!Page.isValid(page) || commentsMoreJob?.isActive == true) return
+        val url = currentUrl
+        commentsMoreJob = activity.lifecycleScope.launch {
+            try {
+                val res = withContext(Dispatchers.IO) { CommentsInfo.getMoreItems(yt, info, page) }
+                if (currentUrl != url) return@launch
+                commentsNext = res.nextPage
+                val rows = ArrayList<Row>()
+                res.items.forEach { rows.add(commentRow(it)) }
+                if (Page.isValid(commentsNext)) rows.add(Row.Loading)
+                commentsAdapter.append(rows)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                commentsAdapter.append(listOf(Row.Message(Errors.text(activity, e))))
+            }
+        }
+    }
+
+    private fun descriptionText(d: Description?): CharSequence {
+        d ?: return ""
+        val content = d.content()
+        return when (d.type()) {
+            Description.Type.HTML -> Html.fromHtml(content, Html.FROM_HTML_MODE_COMPACT).toString().trim()
+            else -> content.trim()
+        }
     }
 
     private fun share(info: StreamInfo) {
@@ -1084,7 +1514,9 @@ class PlayerSheet(
 
     fun onStop(changingConfigurations: Boolean) {
         progressJob?.cancel()
+        savePosition()
         if (!changingConfigurations) {
+            if (!settings.backgroundPlay) service?.player?.pause()
             setVideoEnabled(false)
             playerView?.player = null
         }

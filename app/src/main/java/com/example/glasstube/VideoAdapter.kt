@@ -56,6 +56,47 @@ sealed class Row {
     ) : Row()
     /** Empty space (e.g. under a floating header). */
     data class Space(val heightPx: Int) : Row()
+    /** Expandable settings group header. */
+    data class Group(
+        val key: String,
+        val icon: Int,
+        val title: String,
+        val subtitle: String?,
+        val expanded: Boolean,
+        val onToggle: () -> Unit
+    ) : Row()
+    data class Comment(
+        val author: String,
+        val avatar: String?,
+        val text: CharSequence,
+        val likes: String?,
+        val date: String?,
+        val replies: Int
+    ) : Row()
+}
+
+/** Identity of a row (for animated list updates). */
+fun Row.key(): String = when (this) {
+    is Row.Title -> "title:$title"
+    is Row.Section -> "section:$title"
+    is Row.Menu -> "menu:$title"
+    is Row.Toggle -> "toggle:$title"
+    is Row.Choice -> "choice:$title"
+    is Row.Group -> "group:$key"
+    is Row.VideoRow -> "video:${video.id}"
+    is Row.History -> "history:$query"
+    Row.Loading -> "loading"
+    else -> "obj:" + System.identityHashCode(this)
+}
+
+/** What a row shows (a change of it rebinds the row). */
+private fun Row.content(): String = when (this) {
+    is Row.Menu -> "$title|$subtitle|$thumb"
+    is Row.Toggle -> "$title|$subtitle|$checked|$enabled"
+    is Row.Choice -> "$title|$subtitle|$selected|$options"
+    is Row.Group -> "$title|$subtitle|$expanded"
+    is Row.Section -> "$title|$action"
+    else -> key()
 }
 
 class VideoAdapter(
@@ -73,6 +114,21 @@ class VideoAdapter(
         rows.clear()
         rows.addAll(list)
         notifyDataSetChanged()
+    }
+
+    /** Replaces the rows with animated inserts / removals (settings groups opening). */
+    fun submitAnimated(list: List<Row>) {
+        val old = ArrayList(rows)
+        val diff = androidx.recyclerview.widget.DiffUtil.calculateDiff(object : androidx.recyclerview.widget.DiffUtil.Callback() {
+            override fun getOldListSize() = old.size
+            override fun getNewListSize() = list.size
+            override fun areItemsTheSame(o: Int, n: Int) = old[o].key() == list[n].key()
+            override fun areContentsTheSame(o: Int, n: Int) = old[o].content() == list[n].content()
+            override fun getChangePayload(o: Int, n: Int): Any = "state"
+        })
+        rows.clear()
+        rows.addAll(list)
+        diff.dispatchUpdatesTo(this)
     }
 
     /** Appends rows, replacing a trailing loading / message row. */
@@ -102,6 +158,8 @@ class VideoAdapter(
         is Row.Menu, is Row.Toggle -> 9
         is Row.Choice -> 10
         is Row.Space -> 11
+        is Row.Group -> 12
+        is Row.Comment -> 13
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
@@ -117,6 +175,8 @@ class VideoAdapter(
             8 -> R.layout.item_strip
             9 -> R.layout.item_menu
             10 -> R.layout.item_choice
+            12 -> R.layout.item_group
+            13 -> R.layout.item_comment
             else -> 0
         }
         if (layout == 0) {
@@ -218,30 +278,69 @@ class VideoAdapter(
                 val sub = v.findViewById<TextView>(R.id.subtitle)
                 sub.text = row.subtitle
                 sub.visibility = if (row.subtitle.isNullOrEmpty()) View.GONE else View.VISIBLE
-                val box = v.findViewById<LinearLayout>(R.id.options)
-                box.background = GradientDrawable().apply {
-                    cornerRadius = dp(ctx, 20).toFloat()
-                    setColor(ContextCompat.getColor(ctx, R.color.chip_bg))
-                }
-                box.removeAllViews()
-                row.options.forEachIndexed { i, label ->
-                    val o = TextView(ctx)
-                    o.text = label
-                    o.gravity = Gravity.CENTER
-                    o.textSize = 14f
-                    o.setTextColor(ContextCompat.getColor(ctx, R.color.text))
-                    if (i == row.selected) {
-                        o.background = Glass.pill(ctx, dp(ctx, 17).toFloat(), strong = true)
-                        o.setTypeface(o.typeface, android.graphics.Typeface.BOLD)
-                    }
-                    o.setOnClickListener { row.onSelect(i) }
-                    box.addView(o, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
-                }
+                val seg = v.findViewById<GlassSegmented>(R.id.segmented)
+                val same = seg.tag == row.title
+                seg.tag = row.title
+                seg.options = row.options
+                seg.setSelected(row.selected, animate = same)
+                seg.onSelect = { row.onSelect(it) }
             }
             is Row.Space -> {
                 v.layoutParams = v.layoutParams.apply { height = row.heightPx }
             }
+            is Row.Group -> {
+                v.findViewById<TextView>(R.id.title).text = row.title
+                val sub = v.findViewById<TextView>(R.id.subtitle)
+                sub.text = row.subtitle
+                sub.visibility = if (row.subtitle.isNullOrEmpty()) View.GONE else View.VISIBLE
+                v.background = Glass.pill(ctx, dp(ctx, 20).toFloat())
+                val box = v.findViewById<View>(R.id.iconBox)
+                box.background = GradientDrawable().apply {
+                    cornerRadius = dp(ctx, 12).toFloat()
+                    setColor(ContextCompat.getColor(ctx, R.color.accent))
+                }
+                v.findViewById<ImageView>(R.id.icon).apply {
+                    setImageResource(row.icon)
+                    setColorFilter(Color.WHITE)
+                }
+                val ch = v.findViewById<ImageView>(R.id.chevron)
+                ch.setColorFilter(ContextCompat.getColor(ctx, R.color.text_muted))
+                val target = if (row.expanded) 180f else 0f
+                if (v.tag == row.key) {
+                    ch.animate().rotation(target).setDuration(320)
+                        .setInterpolator(android.view.animation.OvershootInterpolator(1.4f)).start()
+                } else {
+                    ch.animate().cancel()
+                    ch.rotation = target
+                }
+                v.tag = row.key
+                v.setOnClickListener { row.onToggle() }
+            }
+            is Row.Comment -> {
+                v.findViewById<ImageView>(R.id.avatar).load(row.avatar) { transformations(CircleCropTransformation()) }
+                v.findViewById<TextView>(R.id.meta).text = Format.joinDot(row.author, row.date)
+                val t = v.findViewById<TextView>(R.id.text)
+                t.text = row.text
+                t.maxLines = 6
+                t.setOnClickListener { t.maxLines = if (t.maxLines == 6) Int.MAX_VALUE else 6 }
+                val likes = v.findViewById<TextView>(R.id.likes)
+                val parts = listOfNotNull(
+                    row.likes,
+                    if (row.replies > 0) ctx.getString(R.string.replies, row.replies) else null
+                )
+                likes.text = parts.joinToString("   ")
+                val icon = ContextCompat.getDrawable(ctx, R.drawable.ic_like)?.mutate()
+                val sz = dp(ctx, 14)
+                icon?.setBounds(0, 0, sz, sz)
+                icon?.setTint(ContextCompat.getColor(ctx, R.color.text_muted))
+                likes.setCompoundDrawablesRelative(if (row.likes != null) icon else null, null, null, null)
+                likes.visibility = if (parts.isEmpty()) View.GONE else View.VISIBLE
+            }
         }
+    }
+
+    override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int, payloads: MutableList<Any>) {
+        onBindViewHolder(holder, position)
     }
 
     private fun bindMenu(v: View, icon: Int, title: String, subtitle: String?, thumb: String?, chevron: Boolean) {

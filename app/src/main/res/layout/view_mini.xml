@@ -44,14 +44,13 @@
             android:textSize="12sp" />
     </LinearLayout>
 
-    <ImageView
+    <com.example.glasstube.PlayPauseView
         android:id="@+id/miniPlay"
         android:layout_width="42dp"
         android:layout_height="42dp"
         android:background="?android:attr/selectableItemBackgroundBorderless"
         android:contentDescription="@string/play_pause"
-        android:padding="10dp"
-        android:src="@drawable/ic_pause" />
+        android:padding="9dp" />
 
     <ImageView
         android:id="@+id/miniClose"

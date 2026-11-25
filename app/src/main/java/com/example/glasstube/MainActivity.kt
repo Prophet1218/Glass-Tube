@@ -135,7 +135,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     private lateinit var mini: LinearLayout
     private lateinit var miniTitle: TextView
     private lateinit var miniChannel: TextView
-    private lateinit var miniPlay: ImageView
+    private lateinit var miniPlay: PlayPauseView
     private lateinit var miniClose: ImageView
 
     private lateinit var homeAdapter: VideoAdapter
@@ -268,6 +268,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             override fun handleOnBackPressed() {
                 when {
                     sheet.handleBack() -> Unit
+                    tab == Tab.SHORTS && !searchActive && pages.isEmpty() && shorts.handleBack() -> Unit
                     field.hasFocus() -> leaveField()
                     pages.isNotEmpty() -> popPage()
                     searchActive -> collapseSearch()
@@ -367,7 +368,15 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     }
 
     override fun onPlayingChanged(playing: Boolean) {
-        miniPlay.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play)
+        miniPlay.setPause(playing)
+    }
+
+    override fun onMiniOffset(dy: Float, alpha: Float) {
+        mini.translationY = dy
+        mini.alpha = alpha * (1f - sheetProgress * 2.2f).coerceIn(0f, 1f)
+        mini.scaleX = 1f - 0.12f * (1f - alpha)
+        mini.scaleY = mini.scaleX
+        root.invalidate()
     }
 
     override fun onSheetClosed() {
@@ -381,7 +390,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     private fun setupMini() {
         mini.background = Glass.skin(this, null, lensOn)
         val text = Glass.textColor(this)
-        miniPlay.setColorFilter(text)
+        miniPlay.setColor(text)
         miniClose.setColorFilter(ColorUtils.setAlphaComponent(text, 170))
         miniPlay.setOnClickListener { sheet.togglePlay() }
         miniClose.setOnClickListener { sheet.close() }
@@ -590,6 +599,8 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     private fun tabWidth(): Float = fullBarWidth() / 3f
     private fun indicatorWidth(): Float = tabWidth() - dpf(8f)
 
+    private var dragStartX = 0f
+
     private fun onTabTouch(ev: MotionEvent): Boolean {
         if (barCollapse > 0.5f) {
             if (ev.actionMasked == MotionEvent.ACTION_UP) setBarCollapsed(false)
@@ -599,27 +610,33 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 tabs.parent?.requestDisallowInterceptTouchEvent(true)
+                indicatorAnim?.cancel()
                 touchDownX = ev.x
+                dragStartX = tabIndicator.translationX
                 draggingTab = false
                 animatePress(1f)
-                moveIndicatorCenter(ev.x, animate = true)
             }
             MotionEvent.ACTION_MOVE -> {
-                if (!draggingTab && abs(ev.x - touchDownX) > ViewConfiguration.get(this).scaledTouchSlop) draggingTab = true
-                if (draggingTab) moveIndicatorCenter(ev.x, animate = false)
+                val dx = ev.x - touchDownX
+                if (!draggingTab && abs(dx) > ViewConfiguration.get(this).scaledTouchSlop) draggingTab = true
+                if (draggingTab) {
+                    tabIndicator.translationX = clampIndicator(dragStartX + dx)
+                    updateTabVisuals()
+                }
             }
             MotionEvent.ACTION_UP -> {
-                val target = Tab.values()[(ev.x / tw).toInt().coerceIn(0, 2)]
+                val x = if (draggingTab) tabIndicator.translationX + indicatorWidth() / 2f else ev.x
+                val target = Tab.values()[(x / tw).toInt().coerceIn(0, 2)]
                 animatePress(0f)
                 if (searchActive) collapseSearch()
                 while (pages.isNotEmpty()) popPage(animate = false)
-                if (target == tab && !draggingTab) {
-                    placeIndicator(true)
-                    onTabReselected()
-                } else if (target == tab) {
-                    placeIndicator(true)
-                } else {
-                    selectTab(target)
+                when {
+                    target != tab -> selectTab(target)
+                    !draggingTab -> {
+                        placeIndicator(true)
+                        onTabReselected()
+                    }
+                    else -> placeIndicator(true)
                 }
             }
             MotionEvent.ACTION_CANCEL -> {
@@ -630,31 +647,15 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         return true
     }
 
-    private fun moveIndicatorCenter(x: Float, animate: Boolean) {
-        val iw = indicatorWidth()
-        val target = (x - iw / 2f).coerceIn(-dpf(6f), fullBarWidth() - iw + dpf(6f))
-        indicatorAnim?.cancel()
-        if (animate) {
-            indicatorAnim = ValueAnimator.ofFloat(tabIndicator.translationX, target).apply {
-                duration = 160
-                interpolator = DecelerateInterpolator()
-                addUpdateListener {
-                    tabIndicator.translationX = it.animatedValue as Float
-                    updateTabVisuals()
-                }
-                start()
-            }
-        } else {
-            tabIndicator.translationX = target
-            updateTabVisuals()
-        }
-    }
+    private fun clampIndicator(x: Float): Float =
+        x.coerceIn(dpf(4f), fullBarWidth() - indicatorWidth() - dpf(4f))
 
     private fun animatePress(target: Float) {
         pressAnim?.cancel()
+        val growing = target > pressP
         pressAnim = ValueAnimator.ofFloat(pressP, target).apply {
-            duration = if (target > pressP) 220L else 420L
-            interpolator = OvershootInterpolator(if (target > pressP) 1.4f else 1.1f)
+            duration = if (growing) 240L else 320L
+            interpolator = if (growing) OvershootInterpolator(1.2f) else DecelerateInterpolator(1.6f)
             addUpdateListener {
                 pressP = it.animatedValue as Float
                 updateTabVisuals()
@@ -666,8 +667,8 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     /** Capsule size / glassiness and the tab icons under it. */
     private fun updateTabVisuals() {
         val p = pressP.coerceAtLeast(0f)
-        tabIndicator.scaleX = 1f + 0.16f * p
-        tabIndicator.scaleY = 1f + 0.42f * p
+        tabIndicator.scaleX = 1f + 0.12f * p
+        tabIndicator.scaleY = 1f + 0.3f * p
         indicatorFrost?.alpha = (255 * (1f - p).coerceIn(0f, 1f)).toInt()
         indicatorGlass?.alpha = (255 * p.coerceIn(0f, 1f)).toInt()
         val tw = tabWidth()
@@ -715,8 +716,8 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         indicatorAnim?.cancel()
         if (animate) {
             indicatorAnim = ValueAnimator.ofFloat(tabIndicator.translationX, x).apply {
-                duration = 420L
-                interpolator = OvershootInterpolator(1.3f)
+                duration = 380L
+                interpolator = OvershootInterpolator(0.9f)
                 addUpdateListener {
                     tabIndicator.translationX = it.animatedValue as Float
                     updateTabVisuals()
@@ -886,7 +887,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     }
 
     private fun collapseOnScroll(rv: RecyclerView, dy: Int) {
-        if (searchActive || pressP > 0.05f) return
+        if (searchActive || pressP > 0.05f || !settings.collapseBar) return
         if (rv.computeVerticalScrollOffset() <= 0) setBarCollapsed(false)
         else if (dy > dp(4)) setBarCollapsed(true)
         else if (dy < -dp(4)) setBarCollapsed(false)
@@ -1303,68 +1304,166 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         }
     }
 
+    private val openGroups = HashSet<String>()
+
     private fun openSettingsPage() {
         val p = PageView(getString(R.string.settings))
-        fillSettings(p)
+        p.list.itemAnimator = androidx.recyclerview.widget.DefaultItemAnimator().apply {
+            addDuration = 240
+            removeDuration = 160
+            moveDuration = 280
+            changeDuration = 0
+        }
+        fillSettings(p, animate = false)
         pushPage(p)
     }
 
-    private fun fillSettings(p: PageView) {
+    private fun fillSettings(p: PageView, animate: Boolean = true) {
         val rows = ArrayList<Row>()
-        rows.add(Row.Section(getString(R.string.settings_video)))
-        val qualities = listOf(1080, 1440, 2160)
-        rows.add(
-            Row.Choice(
-                getString(R.string.max_quality), getString(R.string.max_quality_sub),
-                qualities.map { "${it}p" }, qualities.indexOf(settings.maxQuality).coerceAtLeast(0)
-            ) {
-                settings.maxQuality = qualities[it]
+        fun group(key: String, icon: Int, title: Int, subtitle: String?, children: () -> List<Row>) {
+            val open = key in openGroups
+            rows.add(Row.Group(key, icon, getString(title), subtitle, open) {
+                if (!openGroups.add(key)) openGroups.remove(key)
                 fillSettings(p)
-            }
-        )
-        val hdrOk = HdrStreams.deviceSupports(this)
-        rows.add(
-            Row.Toggle(
-                R.drawable.ic_hdr, getString(R.string.hdr),
-                getString(if (hdrOk) R.string.hdr_sub else R.string.hdr_unsupported),
-                settings.hdr && hdrOk, hdrOk
-            ) {
-                settings.hdr = it
-                sheet.onSettingsChanged()
-            }
-        )
+            })
+            if (open) rows.addAll(children())
+        }
+        val refresh = { fillSettings(p) }
 
-        rows.add(Row.Section(getString(R.string.account)))
-        if (Account.isSignedIn(this)) {
-            rows.add(Row.Menu(R.drawable.ic_logout, getString(R.string.sign_out), Account.name(this), chevron = false) {
-                Account.signOut(this)
-                Toast.makeText(this, R.string.signed_out, Toast.LENGTH_SHORT).show()
-                onAccountChanged()
-            })
-        } else {
-            rows.add(Row.Menu(R.drawable.ic_google, getString(R.string.sign_in_google), getString(R.string.sign_in_benefits)) {
-                signIn.launch(Intent(this, SignInActivity::class.java))
-            })
+        // ---- playback
+        val qualities = listOf(720, 1080, 1440, 2160)
+        val mobile = listOf(0, 480, 720, 1080)
+        val speeds = listOf(75, 100, 125, 150, 200)
+        val steps = listOf(5, 10, 15, 30)
+        group("playback", R.drawable.ic_play, R.string.settings_playback,
+            "${settings.maxQuality}p · " + speedText(settings.speedPercent)) {
+            listOf(
+                Row.Choice(getString(R.string.max_quality), getString(R.string.max_quality_sub),
+                    qualities.map { "${it}p" }, qualities.indexOf(settings.maxQuality).coerceAtLeast(0)) {
+                    settings.maxQuality = qualities[it]
+                    sheet.onSettingsChanged()
+                    refresh()
+                },
+                Row.Choice(getString(R.string.mobile_quality), getString(R.string.mobile_quality_sub),
+                    mobile.map { if (it == 0) getString(R.string.same) else "${it}p" },
+                    mobile.indexOf(settings.mobileQuality).coerceAtLeast(0)) {
+                    settings.mobileQuality = mobile[it]
+                    sheet.onSettingsChanged()
+                    refresh()
+                },
+                Row.Choice(getString(R.string.default_speed), null,
+                    speeds.map { speedText(it) }, speeds.indexOf(settings.speedPercent).coerceAtLeast(1)) {
+                    settings.speedPercent = speeds[it]
+                    refresh()
+                },
+                Row.Choice(getString(R.string.seek_step), getString(R.string.seek_step_sub),
+                    steps.map { getString(R.string.seconds_short, it) }, steps.indexOf(settings.seekStep).coerceAtLeast(1)) {
+                    settings.seekStep = steps[it]
+                    refresh()
+                },
+                Row.Toggle(R.drawable.ic_play, getString(R.string.autoplay), getString(R.string.autoplay_sub), settings.autoplay) {
+                    settings.autoplay = it
+                },
+                Row.Toggle(R.drawable.ic_headphones, getString(R.string.background_play), getString(R.string.background_play_sub), settings.backgroundPlay) {
+                    settings.backgroundPlay = it
+                },
+                Row.Toggle(R.drawable.ic_history, getString(R.string.resume), getString(R.string.resume_sub), settings.resume) {
+                    settings.resume = it
+                }
+            )
         }
 
-        rows.add(Row.Section(getString(R.string.data)))
-        rows.add(Row.Menu(R.drawable.ic_trash, getString(R.string.clear_watch_history), getString(R.string.clear_watch_history_sub), chevron = false) {
-            store.clearHistory()
-            Toast.makeText(this, R.string.cleared, Toast.LENGTH_SHORT).show()
-        })
-        rows.add(Row.Menu(R.drawable.ic_trash, getString(R.string.clear_search_history), null, chevron = false) {
-            history.clear()
-            Toast.makeText(this, R.string.cleared, Toast.LENGTH_SHORT).show()
-        })
+        // ---- shorts
+        group("shorts", R.drawable.ic_shorts, R.string.tab_shorts, null) {
+            listOf(
+                Row.Toggle(R.drawable.ic_replay10, getString(R.string.shorts_loop), getString(R.string.shorts_loop_sub), settings.shortsLoop) {
+                    settings.shortsLoop = it
+                    shorts.applySettings()
+                }
+            )
+        }
 
-        rows.add(Row.Section(getString(R.string.about)))
+        // ---- appearance
+        val themes = listOf(R.string.theme_system, R.string.theme_light, R.string.theme_dark)
+        group("appearance", R.drawable.ic_palette, R.string.settings_appearance, getString(themes[settings.theme.coerceIn(0, 2)])) {
+            listOf(
+                Row.Choice(getString(R.string.theme), null, themes.map { getString(it) }, settings.theme.coerceIn(0, 2)) {
+                    settings.theme = it
+                    settings.applyTheme()
+                },
+                Row.Toggle(R.drawable.ic_home, getString(R.string.collapse_bar), getString(R.string.collapse_bar_sub), settings.collapseBar) {
+                    settings.collapseBar = it
+                    if (!it) setBarCollapsed(false)
+                },
+                Row.Toggle(R.drawable.ic_palette, getString(R.string.reduce_transparency), getString(R.string.reduce_transparency_sub), settings.reduceTransparency) {
+                    settings.reduceTransparency = it
+                    Glass.reduceTransparency = it
+                    root.postDelayed({ recreate() }, 350)
+                }
+            )
+        }
+
+        // ---- history & privacy
+        group("privacy", R.drawable.ic_history, R.string.settings_privacy, null) {
+            listOf(
+                Row.Toggle(R.drawable.ic_history, getString(R.string.save_watch_history), null, settings.saveWatchHistory) {
+                    settings.saveWatchHistory = it
+                },
+                Row.Toggle(R.drawable.ic_search, getString(R.string.save_search_history), null, settings.saveSearchHistory) {
+                    settings.saveSearchHistory = it
+                },
+                Row.Menu(R.drawable.ic_trash, getString(R.string.clear_watch_history), getString(R.string.clear_watch_history_sub), chevron = false) {
+                    store.clearHistory()
+                    Toast.makeText(this, R.string.cleared, Toast.LENGTH_SHORT).show()
+                },
+                Row.Menu(R.drawable.ic_trash, getString(R.string.clear_search_history), null, chevron = false) {
+                    history.clear()
+                    Toast.makeText(this, R.string.cleared, Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
+
+        // ---- account
+        val signed = Account.isSignedIn(this)
+        group("account", R.drawable.ic_person, R.string.account,
+            if (signed) Account.name(this) ?: getString(R.string.signed_in) else getString(R.string.not_signed_in)) {
+            if (signed) listOf(
+                Row.Menu(R.drawable.ic_logout, getString(R.string.sign_out), Account.name(this), chevron = false) {
+                    Account.signOut(this)
+                    Toast.makeText(this, R.string.signed_out, Toast.LENGTH_SHORT).show()
+                    onAccountChanged()
+                }
+            ) else listOf(
+                Row.Menu(R.drawable.ic_google, getString(R.string.sign_in_google), getString(R.string.sign_in_benefits)) {
+                    signIn.launch(Intent(this, SignInActivity::class.java))
+                }
+            )
+        }
+
+        // ---- about
         val version = try {
             packageManager.getPackageInfo(packageName, 0).versionName
         } catch (e: Exception) {
             null
         }
-        rows.add(Row.Menu(R.drawable.ic_play, getString(R.string.app_name), version, chevron = false) { })
-        p.adapter.submit(rows)
+        group("about", R.drawable.ic_info, R.string.about, version) {
+            listOf(
+                Row.Menu(R.drawable.ic_play, getString(R.string.app_name), version, chevron = false) { },
+                Row.Menu(R.drawable.ic_open, getString(R.string.source_code), "github.com/Prophet1218/Glass-Tube") {
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/Prophet1218/Glass-Tube")))
+                    } catch (e: Exception) {
+                        // no browser
+                    }
+                }
+            )
+        }
+        if (animate) p.adapter.submitAnimated(rows) else p.adapter.submit(rows)
+    }
+
+    private fun speedText(percent: Int): String {
+        val v = percent / 100f
+        return if (v == v.toInt().toFloat()) "${v.toInt()}×" else "${v}×"
     }
 
     // ================================================================ search UI

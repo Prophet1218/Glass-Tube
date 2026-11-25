@@ -9,6 +9,8 @@ import java.util.Locale
 class App : Application() {
     override fun onCreate() {
         super.onCreate()
+        Settings(this).applyTheme()
+        Glass.reduceTransparency = Settings(this).reduceTransparency
         val locale = Locale.getDefault()
         val country = locale.country.ifEmpty { "US" }
         // YouTube answers in the phone's language (titles, "3 days ago", etc.)

@@ -18,9 +18,14 @@
 
     <View
         android:layout_width="match_parent"
-        android:layout_height="260dp"
+        android:layout_height="320dp"
         android:layout_gravity="bottom"
         android:background="@drawable/shorts_scrim" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="120dp"
+        android:background="@drawable/shorts_scrim_top" />
 
     <LinearLayout
         android:id="@+id/info"
@@ -29,58 +34,82 @@
         android:layout_gravity="bottom"
         android:orientation="horizontal"
         android:paddingStart="16dp"
-        android:paddingEnd="12dp">
+        android:paddingEnd="8dp">
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_gravity="bottom"
+            android:layout_marginEnd="8dp"
             android:layout_weight="1"
             android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/channel"
-                android:layout_width="match_parent"
+            <LinearLayout
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:shadowColor="#80000000"
-                android:shadowRadius="4"
-                android:textColor="#FFFFFF"
-                android:textSize="15sp"
-                android:textStyle="bold" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:id="@+id/avatar"
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:background="@drawable/avatar_bg"
+                    android:importantForAccessibility="no"
+                    android:scaleType="centerCrop" />
+
+                <TextView
+                    android:id="@+id/channel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:shadowColor="#99000000"
+                    android:shadowRadius="5"
+                    android:textColor="#FFFFFF"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
 
             <TextView
                 android:id="@+id/title"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
+                android:layout_marginTop="10dp"
                 android:ellipsize="end"
                 android:maxLines="2"
-                android:shadowColor="#80000000"
-                android:shadowRadius="4"
+                android:shadowColor="#99000000"
+                android:shadowRadius="5"
                 android:textColor="#FFFFFF"
                 android:textSize="14sp" />
         </LinearLayout>
 
         <LinearLayout
             android:id="@+id/actions"
-            android:layout_width="wrap_content"
+            android:layout_width="64dp"
             android:layout_height="wrap_content"
             android:layout_gravity="bottom"
             android:gravity="center_horizontal"
             android:orientation="vertical" />
     </LinearLayout>
 
-    <ImageView
+    <com.example.glasstube.PlayPauseView
         android:id="@+id/paused"
-        android:layout_width="72dp"
-        android:layout_height="72dp"
+        android:layout_width="76dp"
+        android:layout_height="76dp"
         android:layout_gravity="center"
         android:alpha="0"
         android:importantForAccessibility="no"
-        android:padding="20dp"
-        android:src="@drawable/ic_play" />
+        android:padding="20dp" />
+
+    <ProgressBar
+        android:id="@+id/spinner"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="center"
+        android:indeterminateTint="#FFFFFF"
+        android:visibility="gone" />
 
     <com.example.glasstube.GlassSeekBar
         android:id="@+id/seek"

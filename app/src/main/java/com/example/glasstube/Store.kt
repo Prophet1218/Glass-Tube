@@ -10,10 +10,24 @@ import org.json.JSONObject
  */
 class Store(ctx: Context) {
     private val prefs = ctx.getSharedPreferences("store", Context.MODE_PRIVATE)
+    private val positions = ctx.getSharedPreferences("positions", Context.MODE_PRIVATE)
+    private val settings = Settings(ctx)
+
+    /** Where the user stopped watching [id] (0 if unknown or finished). */
+    fun position(id: String): Long = positions.getLong(id, 0L)
+
+    fun savePosition(id: String, ms: Long, durationMs: Long) {
+        val e = positions.edit()
+        // near the start or the end: nothing to resume
+        if (ms < 15_000 || (durationMs > 0 && ms > durationMs - 20_000)) e.remove(id) else e.putLong(id, ms)
+        e.apply()
+        if (positions.all.size > 300) positions.edit().clear().apply()
+    }
 
     fun history(): List<Video> = readList("history")
 
     fun addToHistory(v: Video) {
+        if (!settings.saveWatchHistory) return
         val list = history().filterNot { it.id == v.id }.toMutableList()
         list.add(0, v)
         writeList("history", list.take(MAX_HISTORY))
@@ -21,6 +35,7 @@ class Store(ctx: Context) {
 
     fun clearHistory() {
         prefs.edit().remove("history").remove("related").apply()
+        positions.edit().clear().apply()
     }
 
     /** Remembers the related videos of [sourceId] (the newest few sources are kept). */
