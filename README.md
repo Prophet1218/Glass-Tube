@@ -1,4 +1,4 @@
-# Glass Tube 0.8.1
+# Glass Tube 0.9.0
 
 A personal Android YouTube client with the same liquid glass look as Glass Browser. It uses [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor), so it needs no Google account or API key and shows no ads.
 

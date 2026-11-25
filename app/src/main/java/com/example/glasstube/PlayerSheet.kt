@@ -117,6 +117,7 @@ class PlayerSheet(
     private val timeRow: View = view.findViewById(R.id.timeRow)
     private val timeNow: TextView = view.findViewById(R.id.timeNow)
     private val timeTotal: TextView = view.findViewById(R.id.timeTotal)
+    private val chapterChip: TextView = view.findViewById(R.id.chapterChip)
     private val seek: GlassSeekBar = view.findViewById(R.id.seek)
     private val icPlay: PlayPauseView = view.findViewById(R.id.icPlay)
     private val icFull: ImageView = view.findViewById(R.id.icFull)
@@ -174,6 +175,87 @@ class PlayerSheet(
     private var chapters: List<org.schabi.newpipe.extractor.stream.StreamSegment> = emptyList()
     private val storyboards = HashMap<Int, android.graphics.Bitmap>()
     private val storyboardLoading = HashSet<Int>()
+    private var videoThumb: String? = null
+    private var chapterIndex = -1
+    private val chaptersPanel: LinearLayout = LinearLayout(activity).apply {
+        orientation = LinearLayout.VERTICAL
+        setBackgroundResource(R.drawable.panel_bg)
+        isClickable = true
+        isFocusable = true
+        visibility = View.GONE
+    }
+    private val chaptersList = RecyclerView(activity)
+
+    private val chaptersAdapter = object : RecyclerView.Adapter<ChapterHolder>() {
+        override fun getItemCount() = chapters.size
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ChapterHolder {
+            val row = LinearLayout(activity)
+            row.orientation = LinearLayout.HORIZONTAL
+            row.gravity = Gravity.CENTER_VERTICAL
+            row.setPadding(dp(16), dp(9), dp(16), dp(9))
+            row.layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            val img = ImageView(activity)
+            img.scaleType = ImageView.ScaleType.CENTER_CROP
+            img.setBackgroundColor(Color.argb(40, 128, 128, 128))
+            img.outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(v: View, outline: Outline) {
+                    outline.setRoundRect(0, 0, v.width, v.height, dpf(10f))
+                }
+            }
+            img.clipToOutline = true
+            row.addView(img, LinearLayout.LayoutParams(dp(136), dp(76)))
+            val col = LinearLayout(activity)
+            col.orientation = LinearLayout.VERTICAL
+            val t = TextView(activity)
+            t.setTextColor(Glass.textColor(activity))
+            t.textSize = 15f
+            t.maxLines = 2
+            t.ellipsize = android.text.TextUtils.TruncateAt.END
+            col.addView(t)
+            val time = TextView(activity)
+            time.textSize = 12f
+            time.setPadding(dp(7), dp(2), dp(7), dp(2))
+            col.addView(time, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(6)
+            })
+            row.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(14) })
+            return ChapterHolder(row)
+        }
+
+        override fun onBindViewHolder(h: ChapterHolder, position: Int) {
+            val c = chapters[position]
+            val current = position == chapterIndex
+            val text = Glass.textColor(activity)
+            h.title.text = c.title
+            h.title.typeface = if (current) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            h.time.text = clock(c.startTimeSeconds * 1000L)
+            h.time.setTextColor(if (current) text else androidx.core.graphics.ColorUtils.setAlphaComponent(text, 200))
+            h.time.background = GradientDrawable().apply {
+                cornerRadius = dpf(7f)
+                setColor(androidx.core.graphics.ColorUtils.setAlphaComponent(text, if (current) 46 else 24))
+            }
+            h.itemView.background = if (current) GradientDrawable().apply {
+                setColor(androidx.core.graphics.ColorUtils.setAlphaComponent(text, 18))
+            } else null
+            val preview = c.previewUrl
+            when {
+                !preview.isNullOrEmpty() -> h.thumb.load(preview) { crossfade(150) }
+                else -> {
+                    val frame = storyboardFrame(c.startTimeSeconds * 1000L) { notifyItemChanged(position) }
+                    if (frame != null) h.thumb.setImageBitmap(frame)
+                    else h.thumb.load(videoThumb) { crossfade(150) }
+                }
+            }
+            h.itemView.setOnClickListener {
+                val p = service?.player ?: return@setOnClickListener
+                p.seekTo(c.startTimeSeconds * 1000L)
+                updateChapterChip(c.startTimeSeconds * 1000L)
+                if (!p.isPlaying) p.play()
+            }
+        }
+    }
+
     private val previewBox: LinearLayout
     private val previewImage: ImageView
     private val previewText: TextView
@@ -284,6 +366,7 @@ class PlayerSheet(
         details.itemAnimator = null
         commentsList.layoutManager = LinearLayoutManager(activity)
         commentsList.adapter = commentsAdapter
+        setupChapters()
         commentsList.itemAnimator = null
         commentsList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
@@ -443,6 +526,7 @@ class PlayerSheet(
         if (fullscreen) exitFullscreen()
         hideMenuNow()
         if (commentsPanel.visibility == View.VISIBLE) closeComments()
+        closeChapters(animate = false)
         hideControls(fast = true)
         animateTo(0f)
     }
@@ -472,6 +556,10 @@ class PlayerSheet(
         return when {
             menuScrim.visibility == View.VISIBLE -> {
                 hideMenu()
+                true
+            }
+            chaptersPanel.visibility == View.VISIBLE -> {
+                closeChapters()
                 true
             }
             commentsPanel.visibility == View.VISIBLE -> {
@@ -584,8 +672,16 @@ class PlayerSheet(
             commentsPanel.layoutParams = cp
         }
         val late = if (pip) 0f else ((f - 0.8f) / 0.2f).coerceIn(0f, 1f)
-        seek.alpha = late
-        seek.visibility = if (late > 0f) View.VISIBLE else View.INVISIBLE
+        if (fullscreen && !controlsShown && !seek.scrubbing) {
+            seek.animate().cancel()
+            seek.alpha = 0f
+            seek.visibility = View.INVISIBLE
+        } else {
+            seek.animate().cancel()
+            seek.alpha = late
+            seek.visibility = if (late > 0f) View.VISIBLE else View.INVISIBLE
+        }
+        layoutChapters()
         if (f < 0.999f && controls.visibility == View.VISIBLE && !controlsShown) controls.visibility = View.INVISIBLE
         updateLoading()
     }
@@ -953,6 +1049,7 @@ class PlayerSheet(
         }
         timeRow.alpha = 0f
         timeRow.animate().alpha(1f).setDuration(260).start()
+        showFullscreenSeek(260)
         seek.restThickness = dpf(4f)
         seek.restGlow = 0.55f
         updateLoading()
@@ -967,6 +1064,7 @@ class PlayerSheet(
         controls.animate().alpha(1f).setDuration(160).start()
         for (b in buttons) if (b.alpha < 1f && b.animation == null) b.alpha = 1f
         timeRow.animate().alpha(1f).setDuration(160).start()
+        showFullscreenSeek(160)
         seek.restThickness = dpf(4f)
         seek.restGlow = 0.55f
         updateLoading()
@@ -982,6 +1080,12 @@ class PlayerSheet(
             if (!controlsShown) controls.visibility = View.INVISIBLE
         }.start()
         timeRow.animate().alpha(0f).setDuration(if (fast) 90 else 220).start()
+        if (fullscreen) {
+            // in fullscreen the seek bar goes away together with the buttons
+            seek.animate().alpha(0f).setDuration(if (fast) 90 else 220).withEndAction {
+                if (!controlsShown && fullscreen) seek.visibility = View.INVISIBLE
+            }.start()
+        }
         seek.restThickness = dpf(3f)
         seek.restGlow = 0f
         updateLoading()
@@ -1011,6 +1115,7 @@ class PlayerSheet(
                         timeNow.text = clock(p.currentPosition)
                         timeTotal.text = if (dur > 0) clock(dur) else ""
                     }
+                    updateChapterChip(p.currentPosition)
                     val now = System.currentTimeMillis()
                     if (p.isPlaying && now - lastSave > 5000) {
                         lastSave = now
@@ -1471,6 +1576,10 @@ class PlayerSheet(
         }
         chapters = info.streamSegments ?: emptyList()
         seek.chapters = chapters.map { it.startTimeSeconds * 1000L }
+        videoThumb = Format.pick(info.thumbnails, 480)
+        chapterIndex = -1
+        closeChapters(animate = false)
+        updateChapterChip(service?.player?.currentPosition ?: 0L)
         frameset = info.previewFrames?.filter { it.urls.isNotEmpty() }?.minByOrNull { abs(it.frameWidth - 160) }
         storyboards.clear()
 
@@ -1617,6 +1726,8 @@ class PlayerSheet(
         resetComments()
         seek.marks = emptyList()
         seek.chapters = emptyList()
+        chapterChip.visibility = View.GONE
+        closeChapters(animate = false)
         frameset = null
         chapters = emptyList()
         showOfflineDetails(d)
@@ -1672,6 +1783,7 @@ class PlayerSheet(
             progressBeforePip = progress
             hideMenuNow()
             commentsPanel.visibility = View.GONE
+            closeChapters(animate = false)
             hideControls(fast = true)
             progressAnim?.cancel()
             progress = 1f
@@ -1770,6 +1882,175 @@ class PlayerSheet(
         v.scaleX = 0.85f
         v.scaleY = 0.85f
         v.animate().scaleX(1f).scaleY(1f).setDuration(380).setInterpolator(OvershootInterpolator(3f)).start()
+    }
+
+    // ================================================================ chapters
+
+    private fun showFullscreenSeek(duration: Long) {
+        if (!fullscreen) return
+        seek.animate().cancel()
+        if (seek.visibility != View.VISIBLE) {
+            seek.alpha = 0f
+            seek.visibility = View.VISIBLE
+        }
+        seek.animate().alpha(1f).setDuration(duration).start()
+    }
+
+    private fun chapterAt(pos: Long): Int = chapters.indexOfLast { it.startTimeSeconds * 1000L <= pos }
+
+    private fun updateChapterChip(pos: Long) {
+        if (chapters.isEmpty()) {
+            chapterChip.visibility = View.GONE
+            return
+        }
+        val i = chapterAt(pos).coerceAtLeast(0)
+        if (chapterChip.visibility != View.VISIBLE) chapterChip.visibility = View.VISIBLE
+        if (i != chapterIndex) {
+            chapterIndex = i
+            chapterChip.text = chapters[i].title
+            chaptersAdapter.notifyDataSetChanged()
+            if (chaptersPanel.visibility == View.VISIBLE) {
+                (chaptersList.layoutManager as LinearLayoutManager).let { lm ->
+                    if (i < lm.findFirstCompletelyVisibleItemPosition() || i > lm.findLastCompletelyVisibleItemPosition()) {
+                        chaptersList.smoothScrollToPosition(i)
+                    }
+                }
+            }
+        }
+        val mw = (videoBox.width * 0.55f).toInt()
+        if (mw > 0 && chapterChip.maxWidth != mw) chapterChip.maxWidth = mw
+    }
+
+    private inner class ChapterHolder(v: View) : RecyclerView.ViewHolder(v) {
+        val thumb: ImageView = (v as ViewGroup).getChildAt(0) as ImageView
+        val title: TextView = ((v.getChildAt(1) as ViewGroup).getChildAt(0)) as TextView
+        val time: TextView = ((v.getChildAt(1) as ViewGroup).getChildAt(1)) as TextView
+    }
+
+    /** A storyboard frame at [pos], or null (then the sheet is loaded and [loaded] is called). */
+    private fun storyboardFrame(pos: Long, loaded: () -> Unit): android.graphics.Bitmap? {
+        val fs = frameset ?: return null
+        val b = fs.getFrameBoundsAt(pos)
+        val sheetIndex = b[0]
+        val bmp = storyboards[sheetIndex]
+        if (bmp != null) {
+            val l = b[1].coerceIn(0, bmp.width - 1)
+            val t = b[2].coerceIn(0, bmp.height - 1)
+            val fw = (b[3] - b[1]).coerceAtMost(bmp.width - l).coerceAtLeast(1)
+            val fh = (b[4] - b[2]).coerceAtMost(bmp.height - t).coerceAtLeast(1)
+            return try {
+                android.graphics.Bitmap.createBitmap(bmp, l, t, fw, fh)
+            } catch (e: Exception) {
+                null
+            }
+        }
+        if (storyboardLoading.add(sheetIndex)) {
+            val url = fs.urls.getOrNull(sheetIndex) ?: return null
+            activity.lifecycleScope.launch {
+                try {
+                    val req = coil.request.ImageRequest.Builder(activity).data(url).allowHardware(false).build()
+                    val res = coil.Coil.imageLoader(activity).execute(req)
+                    val drawable = (res as? coil.request.SuccessResult)?.drawable as? android.graphics.drawable.BitmapDrawable
+                    drawable?.bitmap?.let {
+                        storyboards[sheetIndex] = it
+                        loaded()
+                    }
+                } finally {
+                    storyboardLoading.remove(sheetIndex)
+                }
+            }
+        }
+        return null
+    }
+
+    private fun setupChapters() {
+        val header = LinearLayout(activity)
+        header.orientation = LinearLayout.HORIZONTAL
+        header.gravity = Gravity.CENTER_VERTICAL
+        header.setPadding(dp(16), dp(10), dp(8), dp(6))
+        val title = TextView(activity)
+        title.setText(R.string.chapters)
+        title.setTextColor(Glass.textColor(activity))
+        title.textSize = 19f
+        title.setTypeface(title.typeface, Typeface.BOLD)
+        header.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val close = ImageView(activity)
+        close.setImageResource(R.drawable.ic_x)
+        close.setColorFilter(Glass.textColor(activity))
+        close.setPadding(dp(11), dp(11), dp(11), dp(11))
+        close.contentDescription = activity.getString(R.string.close)
+        close.setOnClickListener { closeChapters() }
+        header.addView(close, LinearLayout.LayoutParams(dp(42), dp(42)))
+        chaptersPanel.addView(header)
+        chaptersList.layoutManager = LinearLayoutManager(activity)
+        chaptersList.adapter = chaptersAdapter
+        chaptersList.overScrollMode = View.OVER_SCROLL_NEVER
+        chaptersList.clipToPadding = false
+        chaptersPanel.addView(chaptersList, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        view.addView(chaptersPanel, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        chapterChip.background = Glass.overVideo(activity, dpf(13f))
+        val chevron = ContextCompat.getDrawable(activity, R.drawable.ic_chevron_right)?.mutate()
+        chevron?.setTint(Color.WHITE)
+        chevron?.setBounds(0, 0, dp(14), dp(14))
+        chapterChip.setCompoundDrawablesRelative(null, null, chevron, null)
+        chapterChip.setOnClickListener {
+            if (!controlsShown) {
+                showControls(autoHide = isPlaying)
+                return@setOnClickListener
+            }
+            openChapters()
+        }
+    }
+
+    /** Below the video when upright, a side panel on the right in fullscreen (like YouTube). */
+    private fun layoutChapters() {
+        val lp = chaptersPanel.layoutParams as? FrameLayout.LayoutParams ?: return
+        val side = fullscreen && view.width > view.height
+        val w = if (side) (view.width * 0.4f).toInt().coerceIn(dp(300), dp(440)) else ViewGroup.LayoutParams.MATCH_PARENT
+        val top = if (fullscreen) 0 else fullRect.bottom.toInt()
+        val gravity = if (side) Gravity.END or Gravity.TOP else Gravity.TOP
+        val bottomPad = if (fullscreen) dp(16) else host.navBottom() + dp(16)
+        if (chaptersList.paddingBottom != bottomPad) chaptersList.setPadding(0, 0, 0, bottomPad)
+        if (lp.width != w || lp.topMargin != top || lp.gravity != gravity) {
+            lp.width = w
+            lp.height = ViewGroup.LayoutParams.MATCH_PARENT
+            lp.topMargin = top
+            lp.gravity = gravity
+            chaptersPanel.layoutParams = lp
+        }
+    }
+
+    private fun chaptersSide() = fullscreen && view.width > view.height
+
+    private fun openChapters() {
+        if (chapters.isEmpty()) return
+        layoutChapters()
+        chaptersAdapter.notifyDataSetChanged()
+        chaptersPanel.visibility = View.VISIBLE
+        hideJob?.cancel()
+        chaptersPanel.post {
+            val side = chaptersSide()
+            chaptersPanel.translationX = if (side) chaptersPanel.width.toFloat() else 0f
+            chaptersPanel.translationY = if (side) 0f else chaptersPanel.height.toFloat()
+            chaptersPanel.animate().translationX(0f).translationY(0f).setDuration(380).setInterpolator(sheetEase).start()
+            (chaptersList.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(chapterIndex.coerceAtLeast(0), dp(40))
+        }
+    }
+
+    private fun closeChapters(animate: Boolean = true) {
+        if (chaptersPanel.visibility != View.VISIBLE) return
+        if (!animate) {
+            chaptersPanel.animate().cancel()
+            chaptersPanel.visibility = View.GONE
+            return
+        }
+        val side = chaptersSide()
+        chaptersPanel.animate()
+            .translationX(if (side) chaptersPanel.width.toFloat() else 0f)
+            .translationY(if (side) 0f else chaptersPanel.height.toFloat())
+            .setDuration(260).setInterpolator(DecelerateInterpolator())
+            .withEndAction { chaptersPanel.visibility = View.GONE }.start()
+        if (isPlaying && controlsShown) scheduleHide()
     }
 
     // ================================================================ comments

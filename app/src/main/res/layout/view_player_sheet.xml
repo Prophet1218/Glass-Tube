@@ -169,19 +169,43 @@
             android:layout_height="wrap_content"
             android:layout_gravity="bottom"
             android:layout_marginBottom="20dp"
+            android:clipChildren="false"
+            android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingStart="12dp"
             android:paddingEnd="12dp">
 
             <TextView
                 android:id="@+id/timeNow"
-                android:layout_width="0dp"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
                 android:shadowColor="#99000000"
                 android:shadowRadius="4"
                 android:textColor="#D9FFFFFF"
                 android:textSize="12sp" />
+
+            <!-- current chapter in a small glass capsule; opens the chapter list -->
+            <TextView
+                android:id="@+id/chapterChip"
+                android:layout_width="wrap_content"
+                android:layout_height="26dp"
+                android:layout_marginStart="10dp"
+                android:layout_marginEnd="10dp"
+                android:layout_weight="0"
+                android:drawablePadding="4dp"
+                android:ellipsize="end"
+                android:gravity="center_vertical"
+                android:maxLines="1"
+                android:paddingStart="11dp"
+                android:paddingEnd="8dp"
+                android:textColor="#F2FFFFFF"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
 
             <TextView
                 android:id="@+id/timeTotal"

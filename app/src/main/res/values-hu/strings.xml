@@ -176,4 +176,5 @@
     <string name="icon_failed">Az ikont nem sikerült átállítani</string>
     <string name="dispersion">Színszóródás</string>
     <string name="dispersion_sub">Szivárványos szélek a liquid glass felületeken</string>
+    <string name="chapters">Fejezetek</string>
 </resources>

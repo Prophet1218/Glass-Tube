@@ -177,4 +177,5 @@
     <string name="icon_failed">Couldn\'t change the icon</string>
     <string name="dispersion">Colour fringing</string>
     <string name="dispersion_sub">Rainbow edges on the liquid glass surfaces</string>
+    <string name="chapters">Chapters</string>
 </resources>
