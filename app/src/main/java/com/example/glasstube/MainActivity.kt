@@ -629,22 +629,16 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             if (Build.VERSION.SDK_INT >= 31) {
                 halo.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(dpf(5f), dpf(5f), android.graphics.Shader.TileMode.DECAL))
             }
-            frame.addView(halo, FrameLayout.LayoutParams(dp(23), dp(23), Gravity.CENTER))
+            frame.addView(halo, FrameLayout.LayoutParams(dp(26), dp(26), Gravity.CENTER))
             val iv = ImageView(this)
             iv.setImageResource(tabIcons[i])
-            frame.addView(iv, FrameLayout.LayoutParams(dp(23), dp(23), Gravity.CENTER))
+            frame.addView(iv, FrameLayout.LayoutParams(dp(26), dp(26), Gravity.CENTER))
             frame.clipChildren = false
             item.clipChildren = false
-            item.addView(frame, LinearLayout.LayoutParams(dp(36), dp(27)))
+            item.addView(frame, LinearLayout.LayoutParams(dp(40), dp(32)))
             tabHalos.add(halo)
             tabIconViews.add(iv)
-            val tv = TextView(this)
-            tv.text = getString(labels[i])
-            tv.textSize = 10f
-            tv.gravity = Gravity.CENTER
-            tv.setPadding(0, dp(1), 0, 0)
-            item.addView(tv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-            item.contentDescription = tv.text
+            item.contentDescription = getString(labels[i])
             tabs.addView(item, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
             tabViews.add(item)
             if (t == Tab.YOU) youIcon = iv
@@ -763,9 +757,6 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             }
             halo.scaleX = 1.12f
             halo.scaleY = 1.12f
-            val tv = v.getChildAt(1) as TextView
-            tv.setTextColor(col)
-            tv.setShadowLayer(dpf(6f) * glow + 0.01f, 0f, 0f, ColorUtils.setAlphaComponent(glowColor, (190 * glow * (if (night) 1f else 0.4f)).toInt()))
         }
         // the bar's frost gets a hole under the clear glass capsule
         if (p > 0.25f) {
@@ -1288,6 +1279,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
                     updateYouIcon()
                     if (tab == Tab.YOU) buildYouRowsOnly()
                 }
+                if (System.currentTimeMillis() - Subscriptions(this@MainActivity).lastSync() > 6 * 3_600_000L) syncSubscriptions(null)
             } catch (e: Innertube.SessionExpired) {
                 if (!Account.isExpired(this@MainActivity)) {
                     Account.setExpired(this@MainActivity, true)
@@ -1299,6 +1291,27 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         }
     }
 
+    /** Copies the YouTube account's subscriptions to the phone. */
+    private fun syncSubscriptions(done: ((Boolean) -> Unit)?) {
+        if (!Account.isSignedIn(this)) {
+            done?.invoke(false)
+            return
+        }
+        lifecycleScope.launch {
+            val ok = try {
+                val remote = withContext(Dispatchers.IO) { Innertube.subscriptions(this@MainActivity) }
+                Subscriptions(this@MainActivity).merge(remote)
+                remote.isNotEmpty()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                false
+            }
+            if (tab == Tab.YOU && pages.isEmpty()) buildYouRowsOnly()
+            done?.invoke(ok)
+        }
+    }
+
     private fun onAccountChanged() {
         remoteHistory = null
         homeChip = 0
@@ -1306,6 +1319,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         selectTab(tab, animate = false)
         loadHome()
         refreshAccountInBackground()
+        syncSubscriptions(null)
         while (pages.isNotEmpty()) popPage(animate = false)
     }
 
@@ -1666,12 +1680,22 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
 
     private fun openSubscriptionsPage() {
         val p = PageView(getString(R.string.subscriptions_here))
-        val list = Subscriptions(this).all()
-        val rows = ArrayList<Row>()
-        if (list.isEmpty()) rows.add(Row.Message(getString(R.string.subscriptions_empty)))
-        list.forEach { c -> rows.add(Row.ChannelRow(c.name, c.avatar, null) { openChannel(c.url) }) }
-        p.adapter.submit(rows)
+        fun fill(syncing: Boolean) {
+            val list = Subscriptions(this).all()
+            val rows = ArrayList<Row>()
+            if (syncing) rows.add(Row.Loading)
+            if (list.isEmpty() && !syncing) rows.add(Row.Message(getString(R.string.subscriptions_empty)))
+            list.forEach { c -> rows.add(Row.ChannelRow(c.name, c.avatar, null) { openChannel(c.url) }) }
+            p.adapter.submit(rows)
+        }
+        val signed = Account.isSignedIn(this)
+        fill(signed)
         pushPage(p)
+        // always fetch the latest list from YouTube when signed in
+        if (signed) syncSubscriptions { ok ->
+            fill(false)
+            if (!ok) Toast.makeText(this, R.string.sync_failed, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun openPlaylistsPage() {

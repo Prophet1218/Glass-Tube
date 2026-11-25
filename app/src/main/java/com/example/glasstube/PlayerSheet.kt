@@ -646,11 +646,11 @@ class PlayerSheet(
                 drag = Drag.NONE
                 velocity?.recycle()
                 velocity = VelocityTracker.obtain()
-                velocity?.addMovement(ev)
+                trackVelocity(ev)
                 gestures.onTouchEvent(ev)
             }
             MotionEvent.ACTION_MOVE -> {
-                velocity?.addMovement(ev)
+                trackVelocity(ev)
                 val dx = ev.rawX - downX
                 val dy = ev.rawY - downY
                 if (drag == Drag.NONE && abs(dy) > slop && abs(dy) > abs(dx)) {
@@ -698,19 +698,19 @@ class PlayerSheet(
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                velocity?.addMovement(ev)
+                trackVelocity(ev)
                 velocity?.computeCurrentVelocity(1000)
                 val vy = velocity?.yVelocity ?: 0f
                 val dy = ev.rawY - downY
                 when (drag) {
                     Drag.SHEET -> {
-                        // a short pull is enough: the direction of the swipe decides
-                        val moved = startProgress - progress
-                        val target = when {
-                            vy > 250 -> 0f
-                            vy < -250 -> 1f
-                            startProgress > 0.5f -> if (moved > 0.06f) 0f else 1f
-                            else -> if (-moved > 0.06f) 1f else 0f
+                        // started pulling down from the full player: it goes to the mini player,
+                        // however little it moved (only a clear fling back up keeps it open);
+                        // from the mini player the same the other way round
+                        val target = if (startProgress > 0.5f) {
+                            if (vy < -1200 && dy < 0) 1f else 0f
+                        } else {
+                            if (vy > 1200 && dy > 0) 0f else 1f
                         }
                         animateTo(target)
                     }
@@ -785,6 +785,14 @@ class PlayerSheet(
 
     private fun hideHud() {
         hud.animate().alpha(0f).setDuration(260).withEndAction { hud.visibility = View.GONE }.start()
+    }
+
+    /** Velocity in screen coordinates (the video moves under the finger while dragging). */
+    private fun trackVelocity(ev: MotionEvent) {
+        val e = MotionEvent.obtain(ev)
+        e.setLocation(ev.rawX, ev.rawY)
+        velocity?.addMovement(e)
+        e.recycle()
     }
 
     private fun springBackScale() {

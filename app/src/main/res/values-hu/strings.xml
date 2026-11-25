@@ -160,4 +160,5 @@
     <string name="subscriptions_empty">Itt jelennek meg a csatornák, amikre feliratkozol</string>
     <string name="subscriptions_here">Feliratkozások</string>
     <string name="subtitles">Feliratok</string>
+    <string name="sync_failed">Nem sikerült betölteni a YouTube-feliratkozásaidat</string>
 </resources>

@@ -86,6 +86,65 @@ object Innertube {
         post(ctx, endpoint, JSONObject().put("target", JSONObject().put("videoId", videoId)))
     }
 
+    /** All channels the signed-in user is subscribed to. */
+    fun subscriptions(ctx: Context): List<ChannelRef> {
+        val out = LinkedHashMap<String, ChannelRef>()
+        fun collect(node: Any?, tokens: MutableList<String>) {
+            when (node) {
+                is JSONObject -> {
+                    val keys = node.keys()
+                    while (keys.hasNext()) {
+                        val k = keys.next()
+                        val v = node.opt(k)
+                        when (k) {
+                            "channelRenderer", "gridChannelRenderer" -> (v as? JSONObject)?.let { o ->
+                                val id = o.optString("channelId")
+                                if (id.startsWith("UC")) {
+                                    val name = text(o.optJSONObject("title")) ?: return@let
+                                    out[id] = ChannelRef("https://www.youtube.com/channel/$id", name, bestThumb(o.optJSONObject("thumbnail")))
+                                }
+                            }
+                            "guideEntryRenderer" -> (v as? JSONObject)?.let { o ->
+                                val id = (find(o, "guideEntryId") as? String) ?: (find(o, "browseId") as? String) ?: ""
+                                if (id.startsWith("UC")) {
+                                    val name = o.optString("formattedTitle").ifEmpty { text(o.optJSONObject("formattedTitle")).orEmpty() }
+                                    if (name.isNotEmpty()) {
+                                        out.getOrPut(id) { ChannelRef("https://www.youtube.com/channel/$id", name, bestThumb(o.optJSONObject("thumbnail"))) }
+                                    }
+                                }
+                            }
+                            "continuationItemRenderer" -> (v as? JSONObject)?.let { o ->
+                                (find(o, "continuationCommand") as? JSONObject)?.optString("token")
+                                    ?.takeIf { it.isNotEmpty() }?.let { tokens.add(it) }
+                            }
+                            else -> collect(v, tokens)
+                        }
+                    }
+                }
+                is JSONArray -> for (i in 0 until node.length()) collect(node.opt(i), tokens)
+            }
+        }
+        // the "Manage subscriptions" page, page by page
+        var tokens = ArrayList<String>()
+        collect(post(ctx, "browse", JSONObject().put("browseId", "FEchannels")), tokens)
+        var pages = 0
+        while (tokens.isNotEmpty() && pages < 30) {
+            val t = tokens.last()
+            tokens = ArrayList()
+            collect(post(ctx, "browse", JSONObject().put("continuation", t)), tokens)
+            pages++
+        }
+        // the side menu also lists them (fallback / extra)
+        if (out.isEmpty()) {
+            try {
+                collect(post(ctx, "guide", JSONObject()), ArrayList())
+            } catch (e: Exception) {
+                // nothing more to try
+            }
+        }
+        return out.values.toList()
+    }
+
     /** Subscribes to / unsubscribes from a channel ([channelId] = "UC..."). */
     fun subscribe(ctx: Context, channelId: String, on: Boolean) {
         post(ctx, if (on) "subscription/subscribe" else "subscription/unsubscribe",

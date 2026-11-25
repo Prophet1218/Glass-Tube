@@ -58,6 +58,16 @@ class Subscriptions(ctx: Context) {
 
     fun remove(url: String) = save(all().filterNot { same(it.url, url) })
 
+    /** Takes the YouTube account's subscriptions (keeps channels only subscribed here too). */
+    fun merge(remote: List<ChannelRef>) {
+        if (remote.isEmpty()) return
+        val local = all().filter { l -> remote.none { same(it.url, l.url) } }
+        save(remote + local)
+        prefs.edit().putLong("synced", System.currentTimeMillis()).apply()
+    }
+
+    fun lastSync(): Long = prefs.getLong("synced", 0L)
+
     private fun save(list: List<ChannelRef>) {
         prefs.edit().putString("list", JSONArray(list.map { it.toJson() }).toString()).apply()
     }

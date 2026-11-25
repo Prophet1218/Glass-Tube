@@ -161,4 +161,5 @@
     <string name="subscriptions_empty">Channels you subscribe to show up here</string>
     <string name="subscriptions_here">Subscriptions</string>
     <string name="subtitles">Subtitles</string>
+    <string name="sync_failed">Couldn\'t load your YouTube subscriptions</string>
 </resources>
