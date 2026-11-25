@@ -207,6 +207,8 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     /** Copies of the tab icons inside the refracted content (seen through the pressed capsule). */
     private lateinit var ghosts: GhostLayer
     private val tabGhost = FloatArray(3)
+    private val capWin = RectF()
+    private val capLocTmp = IntArray(2)
     /** "Glass Tube" + the tabs: attached to the top of the home page, scrolls away and comes back. */
     private lateinit var homeHeaderView: LinearLayout
     private var headerShift = 0f
@@ -891,6 +893,11 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         val p = pressP.coerceAtLeast(0f)
         layoutCapsule()
         val center = capX
+        if (lensOn && tabIndicator.width > 0) {
+            tabIndicator.getLocationInWindow(capLocTmp)
+            capWin.set(capLocTmp[0].toFloat(), capLocTmp[1].toFloat(),
+                capLocTmp[0] + tabIndicator.width * tabIndicator.scaleX, capLocTmp[1] + tabIndicator.height * tabIndicator.scaleY)
+        } else capWin.setEmpty()
         indicatorFrost?.alpha = (255 * (1f - p).coerceIn(0f, 1f)).toInt()
         indicatorGlass?.alpha = (255 * p.coerceIn(0f, 1f)).toInt()
         val tw = tabWidth()
@@ -911,16 +918,19 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             val col = ColorUtils.blendARGB(dim, glowColor, glow)
             val iv = tabIconViews[i]
             val halo = tabHalos[i]
-            // under the pressed glass the icon is shown by its copy inside the refracted picture
-            val g = if (lensOn) near * (p * 1.6f).coerceIn(0f, 1f) else 0f
+            // under the pressed glass the icon is shown by its copy inside the refracted picture:
+            // the real one is cut away exactly where the capsule covers it
+            val g = ghostAmount(p)
             tabGhost[i] = g
-            iv.alpha = 1f - g
+            iv.alpha = 1f
+            GhostLayer.cutUnder(iv, capWin, g > 0f)
+            GhostLayer.cutUnder(halo, capWin, g > 0f)
             if (!(i == Tab.YOU.ordinal && avatarTab)) {
                 iv.setColorFilter(col)
                 halo.setColorFilter(glowColor)
-                halo.alpha = glow * (if (night) 0.95f else 0.45f) * (1f - g)
+                halo.alpha = glow * (if (night) 0.95f else 0.45f)
             } else {
-                halo.alpha = glow * 0.8f * (1f - g)
+                halo.alpha = glow * 0.8f
             }
             halo.scaleX = 1.12f
             halo.scaleY = 1.12f
@@ -1252,11 +1262,14 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
 
     // ---- tabs at the top of the home page
 
+    /** The copy takes over once the drop is clearly glass (before that the bar's lens would smear it). */
+    private fun ghostAmount(p: Float): Float = if (lensOn) ((p - 0.5f) / 0.15f).coerceIn(0f, 1f) else 0f
+
     private fun setupGhosts() {
         ghosts = GhostLayer(this)
         content.addView(ghosts, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-        tabIconViews.forEachIndexed { i, iv -> ghosts.sources.add(GhostLayer.Source(iv) { tabGhost[i] }) }
-        topTabs.labelViews.forEachIndexed { i, t -> ghosts.sources.add(GhostLayer.Source(t) { topTabs.ghostAlpha(i) }) }
+        tabIconViews.forEachIndexed { i, iv -> ghosts.sources.add(GhostLayer.Source(iv, { tabGhost[i] }, capWin)) }
+        topTabs.labelViews.forEachIndexed { i, t -> ghosts.sources.add(GhostLayer.Source(t, { topTabs.ghostAlpha(i) }, topTabs.capWin)) }
     }
 
     private fun setupTopTabs() {

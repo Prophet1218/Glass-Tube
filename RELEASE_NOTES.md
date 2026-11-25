@@ -1,3 +1,3 @@
-## Glass Tube 1.3.7
+## Glass Tube 1.3.8
 
-- The pressed capsule bends the picture only in a narrow band at its rim; in the middle, where the icon is, it just magnifies a little, so icons are no longer stretched into tall streaks
+- No more ghost images and white smears around the icons under the pressed capsule: the copy seen through the glass now only exists inside the capsule, and the real icon is cut away exactly there instead of being faded, so the two never overlap

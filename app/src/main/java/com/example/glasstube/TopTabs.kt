@@ -63,6 +63,9 @@ class TopTabs(context: Context, labels: List<String>, private val lensOn: Boolea
     private var layingOut = false
 
     val labelViews: List<TextView> get() = texts
+    /** The capsule in window coordinates (for the copies under the glass). */
+    val capWin = RectF()
+    private val winLoc = IntArray(2)
     private val ghost = FloatArray(labels.size)
     fun ghostAlpha(i: Int): Float = ghost.getOrElse(i) { 0f }
 
@@ -203,6 +206,10 @@ class TopTabs(context: Context, labels: List<String>, private val lensOn: Boolea
         val p = press.coerceAtLeast(0f)
         frost.alpha = (255 * (1f - p).coerceIn(0f, 1f)).toInt()
         glass.alpha = (255 * p.coerceIn(0f, 1f)).toInt()
+        if (width > 0) {
+            indicator.getLocationInWindow(winLoc)
+            capWin.set(winLoc[0].toFloat(), winLoc[1].toFloat(), winLoc[0] + indicator.width.toFloat(), winLoc[1] + indicator.height.toFloat())
+        }
         val text = Glass.textColor(context)
         val dim = ColorUtils.setAlphaComponent(text, 150)
         val tw = tabW()
@@ -213,10 +220,12 @@ class TopTabs(context: Context, labels: List<String>, private val lensOn: Boolea
             t.scaleX = s
             t.scaleY = s
             t.translationX = 0f
-            // under the pressed glass the label is shown by its copy inside the refracted picture
-            val g = if (lensOn) near * (p * 1.6f).coerceIn(0f, 1f) else 0f
+            // under the pressed glass the label is shown by its copy inside the refracted picture;
+            // the real one is cut away exactly where the capsule covers it
+            val g = if (lensOn) ((p - 0.5f) / 0.15f).coerceIn(0f, 1f) else 0f
             ghost[i] = g
-            t.alpha = 1f - g
+            t.alpha = 1f
+            GhostLayer.cutUnder(t, capWin, g > 0f)
             t.setShadowLayer(if (night) dpf(6f) * near else 0f, 0f, 0f, Color.argb((150 * near).toInt(), 255, 255, 255))
         }
         if (p > 0.01f) bg.setHole(capRect, capRect.height() / 2f, p.coerceIn(0f, 1f)) else bg.setHole(null, 0f)
