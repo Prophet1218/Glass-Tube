@@ -222,7 +222,7 @@ class TopTabs(context: Context, labels: List<String>, private val lensOn: Boolea
             t.translationX = 0f
             // under the pressed glass the label is shown by its copy inside the refracted picture;
             // the real one is cut away exactly where the capsule covers it
-            val g = if (lensOn) ((p - 0.5f) / 0.15f).coerceIn(0f, 1f) else 0f
+            val g = if (p > 0.01f) 1f else 0f
             ghost[i] = g
             t.alpha = 1f
             GhostLayer.cutUnder(t, capWin, g > 0f)

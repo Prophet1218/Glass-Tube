@@ -290,7 +290,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
 
         setupGlass()
         setupTabs()
-        if (lensOn) setupGhosts()
+        setupGhosts()
         setupMini()
         setupSearch()
         setupInsets()
@@ -893,7 +893,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         val p = pressP.coerceAtLeast(0f)
         layoutCapsule()
         val center = capX
-        if (lensOn && tabIndicator.width > 0) {
+        if (tabIndicator.width > 0) {
             tabIndicator.getLocationInWindow(capLocTmp)
             capWin.set(capLocTmp[0].toFloat(), capLocTmp[1].toFloat(),
                 capLocTmp[0] + tabIndicator.width * tabIndicator.scaleX, capLocTmp[1] + tabIndicator.height * tabIndicator.scaleY)
@@ -1262,14 +1262,20 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
 
     // ---- tabs at the top of the home page
 
-    /** The copy takes over once the drop is clearly glass (before that the bar's lens would smear it). */
-    private fun ghostAmount(p: Float): Float = if (lensOn) ((p - 0.5f) / 0.15f).coerceIn(0f, 1f) else 0f
+    /** Pressed at all: the icons under the capsule are shown through it. */
+    private fun ghostAmount(p: Float): Float = if (p > 0.01f) 1f else 0f
 
     private fun setupGhosts() {
         ghosts = GhostLayer(this)
-        content.addView(ghosts, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-        tabIconViews.forEachIndexed { i, iv -> ghosts.sources.add(GhostLayer.Source(iv, { tabGhost[i] }, capWin)) }
-        topTabs.labelViews.forEachIndexed { i, t -> ghosts.sources.add(GhostLayer.Source(t, { topTabs.ghostAlpha(i) }, topTabs.capWin)) }
+        // over the bars (not refracted), under the player
+        root.addView(ghosts, root.indexOfChild(dock) + 1,
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        tabIconViews.forEachIndexed { i, iv ->
+            ghosts.sources.add(GhostLayer.Source(iv, { tabGhost[i] * dock.alpha }, capWin, { 1f + 0.1f * pressP.coerceIn(0f, 1.2f) }))
+        }
+        topTabs.labelViews.forEachIndexed { i, t ->
+            ghosts.sources.add(GhostLayer.Source(t, { topTabs.ghostAlpha(i) * homeHeaderView.alpha }, topTabs.capWin, { 1f + 0.08f * topTabs.pressAmount.coerceIn(0f, 1.2f) }))
+        }
     }
 
     private fun setupTopTabs() {

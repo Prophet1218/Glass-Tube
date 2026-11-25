@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.glasstube"
         minSdk = 26
         targetSdk = 35
-        versionCode = 27
-        versionName = "1.3.8"
+        versionCode = 28
+        versionName = "1.3.9"
     }
 
     // Fixed signing key kept in the repo, so APKs built on GitHub and in Android Studio

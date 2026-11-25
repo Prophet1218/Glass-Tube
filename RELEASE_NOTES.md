@@ -1,3 +1,3 @@
-## Glass Tube 1.3.8
+## Glass Tube 1.3.9
 
-- No more ghost images and white smears around the icons under the pressed capsule: the copy seen through the glass now only exists inside the capsule, and the real icon is cut away exactly there instead of being faded, so the two never overlap
+- Icons under the pressed capsule are now drawn cleanly through the glass: cut exactly to the capsule's shape (its rim stays visible) and slightly magnified around its centre, with the real icon cut away under it. They no longer melt into white blobs at the capsule's edge, and there are no doubled images

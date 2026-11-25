@@ -7,18 +7,23 @@ import android.graphics.RectF
 import android.view.View
 
 /**
- * Copies of the tab icons / labels drawn inside the refracted content, right under where the
- * real ones sit, but only inside the pressed capsule. There the real icon is cut away and this
- * copy is seen through the glass drop; outside the capsule the real icon stays as it is.
+ * The tab icons / labels as seen through the pressed capsule: drawn over the bar, clipped to the
+ * capsule's shape and a little magnified around its centre, while the real ones are cut away
+ * exactly under it. So the drop is in front of the icons, and they are never smeared or doubled.
  */
 class GhostLayer(context: Context) : View(context) {
 
-    /** [clip]: the capsule in window coordinates (empty = nothing to show). */
-    class Source(val view: View, val alpha: () -> Float, val clip: RectF)
+    /**
+     * [clip]: the capsule in window coordinates (empty = nothing to show); [magnify]: how much
+     * bigger the icon looks through the glass, around the capsule's centre.
+     */
+    class Source(val view: View, val alpha: () -> Float, val clip: RectF, val magnify: () -> Float)
 
     val sources = ArrayList<Source>()
     private val loc = IntArray(2)
     private val own = IntArray(2)
+    private val path = android.graphics.Path()
+    private val inset = resources.displayMetrics.density * 1.5f
 
     init {
         isClickable = false
@@ -37,16 +42,25 @@ class GhostLayer(context: Context) : View(context) {
             v.getLocationInWindow(loc)
             val sx = totalScaleX(v)
             val sy = totalScaleY(v)
+            val cl = s.clip.left - own[0] + inset
+            val ct = s.clip.top - own[1] + inset
+            val cr = s.clip.right - own[0] - inset
+            val cb = s.clip.bottom - own[1] - inset
+            if (cr <= cl || cb <= ct) continue
             val save = canvas.save()
-            canvas.clipRect(s.clip.left - own[0], s.clip.top - own[1], s.clip.right - own[0], s.clip.bottom - own[1])
-            canvas.saveLayerAlpha(
-                (loc[0] - own[0]).toFloat(), (loc[1] - own[1]).toFloat(),
-                loc[0] - own[0] + v.width * sx, loc[1] - own[1] + v.height * sy, (a * 255).toInt()
-            )
+            // inside the capsule only (its rim stays visible around it)
+            path.reset()
+            val r = (cb - ct) / 2f
+            path.addRoundRect(cl, ct, cr, cb, r, r, android.graphics.Path.Direction.CW)
+            canvas.clipPath(path)
+            // magnified around the capsule's centre, as if seen through the drop
+            val m = s.magnify()
+            canvas.scale(m, m, (cl + cr) / 2f, (ct + cb) / 2f)
+            if (a < 0.99f) canvas.saveLayerAlpha(cl, ct, cr, cb, (a * 255).toInt())
             canvas.translate((loc[0] - own[0]).toFloat(), (loc[1] - own[1]).toFloat())
             canvas.scale(sx, sy)
-            // draw(Canvas) ignores the view's clipBounds (they apply when its parent draws it), so the
-            // copy is whole even though the real view is cut away under the capsule
+            // draw(Canvas) ignores the view's clipBounds (they apply when its parent draws it), so
+            // the copy is whole even though the real view is cut away under the capsule
             v.draw(canvas)
             canvas.restoreToCount(save)
         }
