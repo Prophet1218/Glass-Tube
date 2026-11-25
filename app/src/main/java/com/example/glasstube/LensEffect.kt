@@ -382,11 +382,13 @@ vec4 glass(vec2 c, vec4 rect, float radius, float d, float blur, float strength,
     float rh = max(min(refrHeight, radius), 1.0);
     // small buttons with an icon inside (back buttons): the refraction stays in a thin band at
     // the edge, so the icon in the middle is not bent along with the picture
-    if (lensIn < 0.0) {
+    // icon buttons and the pressed tab capsules: the bending stays in a band at the rim, the
+    // middle (where the icon is) is only gently magnified, not stretched
+    if (lensIn != 0.0) {
         rh = max(radius * 0.36, 1.0);
     }
     float t = clamp(1.0 + d / rh, 0.0, 1.0);
-    float ra = lensIn < 0.0 ? min(refrAmount, rh * 1.2) : refrAmount;
+    float ra = lensIn != 0.0 ? min(refrAmount, rh * 1.1) : refrAmount;
     float k = (1.0 - sqrt(1.0 - t * t)) * ra * rs * refrScale;
     vec2 off = n * k;
     // Domború üveg: a felület egy lekerekített "párna"; a pereme felé egyre meredekebb.
@@ -395,14 +397,14 @@ vec4 glass(vec2 c, vec4 rect, float radius, float d, float blur, float strength,
     float u = clamp(1.0 + d / bev, 0.0, 1.0);
     float tilt = u * u;
     float cv = max(convex, lensAmt);
-    float cr = max(convexRefr, lensAmt * 0.45);
+    float cr = max(convexRefr, lensAmt * 0.2);
     if (cr > 0.0) {
         // vastag lencse: a szélek felé erősebben húzza befelé a képet, középen enyhén nagyít
         off += (n * (tilt * u) * (bev * 0.32) + p * 0.045) * cr;
     }
     if (lensAmt > 0.0) {
         // magnifying drop: the middle is enlarged, the rim bends the picture strongly
-        off += (p * 0.06 + n * (tilt * tilt) * (bev * 0.16)) * lensAmt * refrScale;
+        off += (p * 0.05 + n * (tilt * tilt * tilt) * (bev * 0.1)) * lensAmt * refrScale;
     }
     float disp = max(dispersion, 0.08 * lensAmt) * dispScale;
     vec4 col = blurAt(c - off, blur);
