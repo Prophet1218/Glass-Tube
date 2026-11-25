@@ -70,13 +70,16 @@ class HoleDrawable(private val inner: Drawable) : Drawable() {
     private val path = Path()
     private val rect = RectF()
     private var hole = false
+    private var strength = 1f
 
-    fun setHole(r: RectF?, radius: Float) {
+    /** [strength]: how much of the frost is cut away inside the hole (fades in with the press). */
+    fun setHole(r: RectF?, radius: Float, strength: Float = 1f) {
         if (r == null) {
             if (!hole) return
             hole = false
         } else {
             hole = true
+            this.strength = strength
             rect.set(r)
             path.reset()
             path.addRoundRect(rect, radius, radius, Path.Direction.CW)
@@ -94,6 +97,15 @@ class HoleDrawable(private val inner: Drawable) : Drawable() {
             canvas.clipOutPath(path)
             inner.draw(canvas)
             canvas.restoreToCount(save)
+            if (strength < 0.995f) {
+                val save2 = canvas.save()
+                canvas.clipPath(path)
+                val a = inner.alpha
+                inner.alpha = (a * (1f - strength)).toInt()
+                inner.draw(canvas)
+                inner.alpha = a
+                canvas.restoreToCount(save2)
+            }
         } else {
             inner.draw(canvas)
         }
@@ -170,8 +182,6 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
 
     // pressed / dragged glass capsule
     private var pressP = 0f
-    private var pressAnim: ValueAnimator? = null
-    private var indicatorAnim: ValueAnimator? = null
     private var touchDownX = 0f
     private var draggingTab = false
 
@@ -517,7 +527,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         val night = Glass.isNight(this)
         // resting capsule: frosted; pressed: clear liquid glass (rim + sheen over the lens)
         val frost = GradientDrawable().apply {
-            cornerRadius = dpf(23f)
+            cornerRadius = dpf(100f)
             setColor(if (night) Color.argb(46, 255, 255, 255) else Color.argb(22, 0, 0, 0))
         }
         val glass = GlassSkinDrawable(density).apply {
@@ -646,6 +656,10 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             if (t == Tab.YOU) youIcon = iv
         }
         tabs.setOnTouchListener { _, ev -> onTabTouch(ev) }
+        // a layout pass of the bar puts the capsule back to its xml size: re-apply ours
+        tabIndicator.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            if (!capLayout) tabIndicator.post { updateTabVisuals() }
+        }
         collapsedIcon.setOnClickListener { setBarCollapsed(false) }
         dock.addOnLayoutChangeListener { _, l, _, r, _, ol, _, or, _ ->
             if (r - l != or - ol) dock.post {
@@ -660,7 +674,79 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     private fun tabWidth(): Float = fullBarWidth() / 3f
     private fun indicatorWidth(): Float = tabWidth() - dpf(8f)
 
-    private var dragStartX = 0f
+    // ---- the capsule: spring physics (position, press and a little stretch while it moves)
+
+    /** Centre of the capsule in the tab bar, its velocity and where it is heading. */
+    private var capX = 0f
+    private var capV = 0f
+    private var capTarget = 0f
+    private var pressV = 0f
+    private var pressTarget = 0f
+    private var stretch = 0f
+    private var capRunning = false
+    private var capLastFrame = 0L
+    private val capRect = RectF()
+    private var capLayout = false
+
+    private val capFrame = object : android.view.Choreographer.FrameCallback {
+        override fun doFrame(frameTimeNanos: Long) {
+            val dt = if (capLastFrame == 0L) 1f / 120f
+            else ((frameTimeNanos - capLastFrame) / 1e9f).coerceIn(0.001f, 1f / 30f)
+            capLastFrame = frameTimeNanos
+            stepCapsule(dt)
+            updateTabVisuals()
+            if (capsuleSettled()) {
+                capX = capTarget
+                capV = 0f
+                pressP = pressTarget
+                pressV = 0f
+                stretch = 0f
+                capRunning = false
+                capLastFrame = 0L
+                updateTabVisuals()
+            } else {
+                android.view.Choreographer.getInstance().postFrameCallback(this)
+            }
+        }
+    }
+
+    private fun startCapsule() {
+        if (capRunning) return
+        capRunning = true
+        capLastFrame = 0L
+        android.view.Choreographer.getInstance().postFrameCallback(capFrame)
+    }
+
+    private fun capsuleSettled(): Boolean =
+        abs(capX - capTarget) < 0.3f && abs(capV) < dpf(4f) &&
+            abs(pressP - pressTarget) < 0.002f && abs(pressV) < 0.02f && stretch < 0.002f
+
+    private fun stepCapsule(dt: Float) {
+        // stiffer and almost without bounce while following the finger, softer when settling
+        val kx = if (draggingTab) 1100f else 420f
+        val zx = if (draggingTab) 0.92f else 0.74f
+        val growing = pressTarget > pressP
+        val kp = if (growing) 750f else 440f
+        val zp = if (growing) 0.55f else 0.82f
+        val n = 4
+        val h = dt / n
+        repeat(n) {
+            val ax = -kx * (capX - capTarget) - 2f * zx * kotlin.math.sqrt(kx) * capV
+            capV += ax * h
+            capX += capV * h
+            val ap = -kp * (pressP - pressTarget) - 2f * zp * kotlin.math.sqrt(kp) * pressV
+            pressV += ap * h
+            pressP += pressV * h
+        }
+        // stretch follows the speed, smoothed so it doesn't flicker
+        val want = (abs(capV) / dpf(1400f)).coerceIn(0f, 1f)
+        stretch += (want - stretch) * (1f - kotlin.math.exp(-dt * 18f))
+        if (stretch < 0.001f && want == 0f) stretch = 0f
+    }
+
+    private fun tabCenter(i: Int): Float = tabWidth() * i + tabWidth() / 2f
+
+    private fun clampCenter(x: Float): Float = x.coerceIn(tabCenter(0), tabCenter(2))
 
     private fun onTabTouch(ev: MotionEvent): Boolean {
         if (barCollapse > 0.5f) {
@@ -671,80 +757,79 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 tabs.parent?.requestDisallowInterceptTouchEvent(true)
-                indicatorAnim?.cancel()
                 touchDownX = ev.x
-                dragStartX = tabIndicator.translationX
                 draggingTab = false
-                animatePress(1f)
+                // grows in place; it only travels once the finger moves
+                pressTarget = 1f
+                startCapsule()
             }
             MotionEvent.ACTION_MOVE -> {
                 val dx = ev.x - touchDownX
                 if (!draggingTab && abs(dx) > ViewConfiguration.get(this).scaledTouchSlop) draggingTab = true
                 if (draggingTab) {
-                    tabIndicator.translationX = clampIndicator(dragStartX + dx)
-                    updateTabVisuals()
+                    capTarget = clampCenter(ev.x)
+                    startCapsule()
                 }
             }
             MotionEvent.ACTION_UP -> {
-                val x = if (draggingTab) tabIndicator.translationX + indicatorWidth() / 2f else ev.x
+                val x = if (draggingTab) capTarget else ev.x
                 val target = Tab.values()[(x / tw).toInt().coerceIn(0, 2)]
-                animatePress(0f)
+                draggingTab = false
+                pressTarget = 0f
                 if (searchActive) collapseSearch()
                 while (pages.isNotEmpty()) popPage(animate = false)
                 when {
                     target != tab -> selectTab(target)
-                    !draggingTab -> {
+                    else -> {
                         placeIndicator(true)
-                        onTabReselected()
+                        if (abs(ev.x - touchDownX) <= ViewConfiguration.get(this).scaledTouchSlop) onTabReselected()
                     }
-                    else -> placeIndicator(true)
                 }
+                startCapsule()
             }
             MotionEvent.ACTION_CANCEL -> {
-                animatePress(0f)
+                draggingTab = false
+                pressTarget = 0f
                 placeIndicator(true)
             }
         }
         return true
     }
 
-    private fun clampIndicator(x: Float): Float =
-        x.coerceIn(dpf(4f), fullBarWidth() - indicatorWidth() - dpf(4f))
-
-    private fun animatePress(target: Float) {
-        pressAnim?.cancel()
-        val growing = target > pressP
-        pressAnim = ValueAnimator.ofFloat(pressP, target).apply {
-            duration = if (growing) 240L else 320L
-            interpolator = if (growing) OvershootInterpolator(1.2f) else DecelerateInterpolator(1.6f)
-            addUpdateListener {
-                pressP = it.animatedValue as Float
-                updateTabVisuals()
-            }
-            start()
-        }
-    }
-
     /** Capsule size / glassiness and the tab icons under it. */
     private fun updateTabVisuals() {
         val p = pressP.coerceAtLeast(0f)
-        val sx = 1f + 0.1f * p
-        tabIndicator.scaleX = sx
-        tabIndicator.scaleY = 1f + 0.2f * p
-        // keep the grown capsule inside the bar: move the pivot instead of letting it poke out
-        val iwNow = indicatorWidth()
-        if (sx > 1.001f && iwNow > 0f) {
-            val x0 = tabIndicator.translationX
-            val scaledW = iwNow * sx
-            val want = (x0 + iwNow / 2f - scaledW / 2f).coerceIn(dpf(2f), fullBarWidth() - dpf(2f) - scaledW)
-            tabIndicator.pivotX = (want - x0) / (1f - sx)
-        } else {
-            tabIndicator.pivotX = iwNow / 2f
+        val iw = indicatorWidth()
+        val ih = dpf(46f)
+        val barW = fullBarWidth()
+        if (iw > 0f && ih > 0f) {
+            // pressed: a bit bigger; moving fast: longer and a little flatter
+            val wf = 1f + 0.1f * p + 0.16f * stretch
+            val hf = (1f + 0.19f * p - 0.1f * stretch).coerceAtMost(1.2f)
+            var l = capX - iw * wf / 2f
+            var r = capX + iw * wf / 2f
+            // against the ends of the bar it squashes instead of poking out
+            val minL = dpf(2.5f)
+            val maxR = barW - dpf(2.5f)
+            if (l < minL) l = minL
+            if (r > maxR) r = maxR
+            if (r - l < iw * 0.8f) r = l + iw * 0.8f
+            // real bounds instead of scaling, so the rounded ends stay perfectly round
+            val bar = tabIndicator.parent as View
+            val cy = bar.height / 2f
+            val hh = ih * hf / 2f
+            capRect.set(l, cy - hh, r, cy + hh)
+            tabIndicator.translationX = 0f
+            tabIndicator.scaleX = 1f
+            tabIndicator.scaleY = 1f
+            capLayout = true
+            tabIndicator.layout(Math.round(l), Math.round(cy - hh), Math.round(r), Math.round(cy + hh))
+            capLayout = false
         }
+        val center = capX
         indicatorFrost?.alpha = (255 * (1f - p).coerceIn(0f, 1f)).toInt()
         indicatorGlass?.alpha = (255 * p.coerceIn(0f, 1f)).toInt()
         val tw = tabWidth()
-        val center = tabIndicator.translationX + indicatorWidth() / 2f
         val text = Glass.textColor(this)
         val night = Glass.isNight(this)
         val glowColor = if (night) Color.WHITE else Color.argb(255, 40, 44, 52)
@@ -756,8 +841,8 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             val s = 1f + 0.16f * p.coerceIn(0f, 1.2f) * near
             v.scaleX = s
             v.scaleY = s
-            // glow: follows the capsule while dragging, otherwise the selected tab
-            val glow = if (p > 0.05f) near else if (i == tab.ordinal) 1f else 0f
+            // glow follows the capsule (at rest that is exactly the selected tab)
+            val glow = near
             val col = ColorUtils.blendARGB(dim, glowColor, glow)
             val iv = tabIconViews[i]
             val halo = tabHalos[i]
@@ -772,15 +857,8 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             halo.scaleY = 1.12f
         }
         // the bar's frost gets a hole under the clear glass capsule
-        if (p > 0.25f) {
-            val w = tabIndicator.width
-            val h = tabIndicator.height
-            val sx2 = tabIndicator.scaleX
-            val sy = tabIndicator.scaleY
-            val l = tabIndicator.left + tabIndicator.translationX + tabIndicator.pivotX * (1f - sx2)
-            val t = tabIndicator.top + h * (1f - sy) / 2f
-            tmp.set(l, t, l + w * sx2, t + h * sy)
-            tabBarBg?.setHole(tmp, tmp.height() / 2f)
+        if (p > 0.01f) {
+            tabBarBg?.setHole(capRect, capRect.height() / 2f, p.coerceIn(0f, 1f))
         } else {
             tabBarBg?.setHole(null, 0f)
         }
@@ -789,29 +867,22 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
 
     private fun placeIndicator(animate: Boolean) {
         if (dock.width == 0) return
-        val tw = tabWidth()
         val lp = tabIndicator.layoutParams
         val iw = indicatorWidth().toInt()
         if (lp.width != iw) {
             lp.width = iw
             tabIndicator.layoutParams = lp
         }
-        val x = tw * tab.ordinal + dpf(4f)
-        indicatorAnim?.cancel()
-        if (animate) {
-            indicatorAnim = ValueAnimator.ofFloat(tabIndicator.translationX, x).apply {
-                duration = 380L
-                interpolator = OvershootInterpolator(0.9f)
-                addUpdateListener {
-                    tabIndicator.translationX = it.animatedValue as Float
-                    updateTabVisuals()
-                }
-                start()
+        capTarget = tabCenter(tab.ordinal)
+        if (!animate || capX == 0f) {
+            capX = capTarget
+            capV = 0f
+            if (!capRunning) {
+                updateTabVisuals()
+                return
             }
-        } else {
-            tabIndicator.translationX = x
-            updateTabVisuals()
         }
+        startCapsule()
     }
 
     // ---- collapsing on scroll

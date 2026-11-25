@@ -1,7 +1,6 @@
-## Glass Tube 0.6.0
+## Glass Tube 0.6.1
 
-- App icon chooser in Settings → App icon: the same four styles (plain, frosted glass, liquid glass, grey base) in the same six colours as Glass Browser
-- The pressed tab bar capsule no longer shows a doubled, magnified inner oval, a grey dot or a smear at the edge, and it stays inside the bar when it grows
-- Settings switches move smoothly: the knob no longer jumps, flickers or sticks out of the track
-- The play icon no longer has a notch in the middle (in the player and in the mini player)
-- New, smoother settings gear icon
+- The tab bar capsule no longer slips downwards when pressed: it grows evenly from its centre and stays inside the bar
+- New capsule motion with spring physics: it grows with a little bounce, glides after your finger while dragging, stretches a bit while moving fast, squashes against the ends of the bar, then springs onto the selected tab
+- The capsule keeps perfectly round ends at every size (it's resized, not stretched)
+- The frost under the capsule fades out smoothly as you press instead of disappearing at once
