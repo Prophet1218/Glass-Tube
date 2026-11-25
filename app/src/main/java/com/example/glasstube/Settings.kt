@@ -101,6 +101,11 @@ class Settings(ctx: Context) {
         get() = bool("swipe_controls", true)
         set(v) = put("swipe_controls", v)
 
+    /** Refraction strength of the liquid glass in percent (0..200, 100 = normal). */
+    var refraction: Int
+        get() = int("refraction", 100)
+        set(v) = put("refraction", v)
+
     // ---- history
     var saveWatchHistory: Boolean
         get() = bool("save_watch_history", true)

@@ -183,4 +183,6 @@
     <string name="top_home">Home</string>
     <string name="top_subs">Subs</string>
     <string name="top_live">Live</string>
+    <string name="refraction">Refraction</string>
+    <string name="refraction_sub">How strongly the liquid glass bends what is behind it</string>
 </resources>

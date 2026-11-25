@@ -182,4 +182,6 @@
     <string name="top_home">Főoldal</string>
     <string name="top_subs">Követett</string>
     <string name="top_live">Élő</string>
+    <string name="refraction">Fénytörés</string>
+    <string name="refraction_sub">Mennyire hajlítja meg a liquid glass a mögötte lévő képet</string>
 </resources>

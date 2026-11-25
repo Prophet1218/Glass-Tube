@@ -186,10 +186,12 @@ class LensEffect(private val target: View) {
     }
 
     private var appliedDisp: Boolean? = null
+    private var appliedRefr = -1f
 
     fun apply() {
-        if (appliedDisp != Glass.dispersion) {
+        if (appliedDisp != Glass.dispersion || appliedRefr != Glass.refraction) {
             appliedDisp = Glass.dispersion
+            appliedRefr = Glass.refraction
             dirty = true
         }
         if (!dirty && attached) return
@@ -215,6 +217,7 @@ class LensEffect(private val target: View) {
         shader.setFloatUniform("convexRefr", convexRefr)
         shader.setFloatUniform("lens0", lens0)
         shader.setFloatUniform("dispScale", if (Glass.dispersion) 1f else 0f)
+        shader.setFloatUniform("refrScale", Glass.refraction)
         val main = RenderEffect.createRuntimeShaderEffect(shader, "content")
         if (flowH > 0f && flowBlur >= 1f) {
             val mask = flowMask ?: RuntimeShader(MASK_SRC).also { flowMask = it }
@@ -317,6 +320,7 @@ uniform float convex;
 uniform float convexRefr;
 uniform float lens0;
 uniform float dispScale;
+uniform float refrScale;
 
 float sdRound(vec2 p, vec2 hs, float r) {
     vec2 q = abs(p) - hs + vec2(r);
@@ -360,7 +364,10 @@ vec4 blurAt(vec2 c, float r) {
     return s / wsum;
 }
 
-vec4 glass(vec2 c, vec4 rect, float radius, float d, float blur, float strength, float lensAmt) {
+vec4 glass(vec2 c, vec4 rect, float radius, float d, float blur, float strength, float lensIn) {
+    // a negative lens value means: no magnifier, edge refraction scaled down (small buttons)
+    float lensAmt = max(lensIn, 0.0);
+    float rs = lensIn < 0.0 ? -lensIn : 1.0;
     vec2 center = (rect.xy + rect.zw) * 0.5;
     vec2 hs = (rect.zw - rect.xy) * 0.5;
     vec2 p = c - center;
@@ -374,7 +381,7 @@ vec4 glass(vec2 c, vec4 rect, float radius, float d, float blur, float strength,
     n = n * sign(p);
     float rh = max(min(refrHeight, radius), 1.0);
     float t = clamp(1.0 + d / rh, 0.0, 1.0);
-    float k = (1.0 - sqrt(1.0 - t * t)) * refrAmount;
+    float k = (1.0 - sqrt(1.0 - t * t)) * refrAmount * rs * refrScale;
     vec2 off = n * k;
     // Domború üveg: a felület egy lekerekített "párna"; a pereme felé egyre meredekebb.
     // u = 0 a lapos közepén, 1 a peremen; tilt = a felület dőlése (a normális vízszintes része).
@@ -389,7 +396,7 @@ vec4 glass(vec2 c, vec4 rect, float radius, float d, float blur, float strength,
     }
     if (lensAmt > 0.0) {
         // magnifying drop: the middle is enlarged, the rim bends the picture strongly
-        off += (p * 0.12 + n * (tilt * tilt) * (bev * 0.35)) * lensAmt;
+        off += (p * 0.12 + n * (tilt * tilt) * (bev * 0.35)) * lensAmt * refrScale;
     }
     float disp = max(dispersion, 0.08 * lensAmt) * dispScale;
     vec4 col = blurAt(c - off, blur);

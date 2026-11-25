@@ -26,6 +26,33 @@ object Glass {
     /** Colour fringing at the edges of every liquid glass surface. */
     var dispersion = false
 
+    /** Strength of the refraction of every liquid glass surface (1 = normal, 0 = none). */
+    var refraction = 1f
+
+    /** Icon tile for the settings: a small piece of liquid glass with a shine on top. */
+    fun iconTile(ctx: Context, radius: Float): Drawable {
+        val night = isNight(ctx)
+        val base = GradientDrawable().apply {
+            cornerRadius = radius
+            setColor(if (night) Color.argb(34, 255, 255, 255) else Color.argb(16, 0, 0, 0))
+        }
+        val sheen = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(
+                Color.argb(if (night) 70 else 120, 255, 255, 255),
+                Color.argb(0, 255, 255, 255),
+                Color.argb(if (night) 18 else 30, 255, 255, 255)
+            )
+        ).apply { cornerRadius = radius }
+        val skin = GlassSkinDrawable(ctx.resources.displayMetrics.density)
+        skin.cornerRadius = radius
+        skin.setTint(0.5f, null)
+        skin.setRim(true)
+        skin.setConvex(1f)
+        skin.setContentColor(textColor(ctx))
+        return LayerDrawable(arrayOf(base, sheen, skin))
+    }
+
     fun lensSupported(): Boolean = Build.VERSION.SDK_INT >= 33 && !reduceTransparency
 
     /** A glass skin for a surface that has the lens underneath ([lens] = true) or not. */

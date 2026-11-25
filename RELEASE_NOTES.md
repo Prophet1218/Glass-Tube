@@ -1,3 +1,6 @@
-## Glass Tube 1.2.2
+## Glass Tube 1.3.0
 
-- While the player shrinks into the mini player or grows back, the page under the video (title, comments, up next) no longer slides over the app: it blurs and fades away quickly and only shows again near the full player
+- Settings: the blue icon squares are now small pieces of liquid glass with a shine and a light rim
+- Back buttons (pages, search): much gentler refraction, so the glass no longer smears into a bright crescent
+- Opening and closing search slides and fades like switching tabs
+- New in Settings → Appearance: Refraction strength (off, 50%, 100%, 150%, 200%), for every liquid glass surface

@@ -573,7 +573,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         out.set(l, t, l + v.width * v.scaleX, t + v.height * v.scaleY)
     }
 
-    private fun slot(l: LensEffect, index: Int, v: View, radius: Float?, extra: Float = 1f) {
+    private fun slot(l: LensEffect, index: Int, v: View, radius: Float?, extra: Float = 1f, refr: Float = 1f) {
         if (v.visibility != View.VISIBLE || v.alpha < 0.02f || v.width == 0 || extra < 0.02f) {
             l.clearSlot(index)
             return
@@ -586,7 +586,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         }
         rectOf(v, tmp)
         val r = radius ?: (tmp.height() / 2f)
-        l.setSlot(index, tmp.left, tmp.top, tmp.right, tmp.bottom, r, dpf(2f), a.coerceIn(0f, 1f))
+        l.setSlot(index, tmp.left, tmp.top, tmp.right, tmp.bottom, r, dpf(2f), a.coerceIn(0f, 1f), if (refr < 1f) -refr else 0f)
     }
 
     private fun updateLens() {
@@ -607,13 +607,13 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             }
             slot(l, 2, tabBar, null)
             slot(l, 3, if (searchBar.visibility == View.VISIBLE) searchBar else searchButton, null)
-            slot(l, 4, searchBack, null)
+            slot(l, 4, searchBack, null, refr = 0.3f)
         } else {
             for (i in listOf(0, 2, 3, 4)) l.clearSlot(i)
         }
         val top = pages.lastOrNull()
         if (suggestions.visibility == View.VISIBLE) slot(l, 5, suggestions, dpf(24f))
-        else if (top != null) slot(l, 5, top.back, null)
+        else if (top != null) slot(l, 5, top.back, null, refr = 0.3f)
         else l.clearSlot(5)
         slot(l, 6, mini, null)
         // the tabs at the top of the home page: the bar, and its capsule as a drop of glass when pressed
@@ -1013,6 +1013,21 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     /** Page switch: the old page slides and fades out, the new one in. */
     private fun crossfade(from: View, to: View, dir: Int) {
         val shift = dpf(36f) * dir
+        if (::homeHeaderView.isInitialized) {
+            if (from === homeList) {
+                homeHeaderView.animate().cancel()
+                homeHeaderView.visibility = View.VISIBLE
+                homeHeaderView.alpha = 1f
+                homeHeaderView.animate().alpha(0f).setDuration(200).withEndAction {
+                    homeHeaderView.alpha = 1f
+                    homeHeaderView.visibility = homeList.visibility
+                }.start()
+            } else if (to === homeList) {
+                homeHeaderView.animate().cancel()
+                homeHeaderView.alpha = 0f
+                homeHeaderView.animate().alpha(1f).setDuration(300).setStartDelay(60).start()
+            }
+        }
         from.animate().cancel()
         to.animate().cancel()
         from.visibility = View.VISIBLE
@@ -2168,6 +2183,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
 
         // ---- appearance
         val themes = listOf(R.string.theme_system, R.string.theme_light, R.string.theme_dark)
+        val refrSteps = listOf(0, 50, 100, 150, 200)
         group("appearance", R.drawable.ic_palette, R.string.settings_appearance, getString(themes[settings.theme.coerceIn(0, 2)])) {
             listOf(
                 Row.Choice(getString(R.string.theme), null, themes.map { getString(it) }, settings.theme.coerceIn(0, 2)) {
@@ -2177,6 +2193,15 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
                 Row.Toggle(R.drawable.ic_home, getString(R.string.collapse_bar), getString(R.string.collapse_bar_sub), settings.collapseBar) {
                     settings.collapseBar = it
                     if (!it) setBarCollapsed(false)
+                },
+                Row.Choice(getString(R.string.refraction), getString(R.string.refraction_sub),
+                    refrSteps.map { if (it == 0) getString(R.string.off) else "$it%" },
+                    refrSteps.indexOf(settings.refraction).let { if (it < 0) 2 else it }) {
+                    settings.refraction = refrSteps[it]
+                    Glass.refraction = refrSteps[it] / 100f
+                    lens?.apply()
+                    root.invalidate()
+                    refresh()
                 },
                 Row.Toggle(R.drawable.ic_palette, getString(R.string.dispersion), getString(R.string.dispersion_sub), settings.dispersion, enabled = !settings.reduceTransparency) {
                     settings.dispersion = it
@@ -2318,6 +2343,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             }
             return
         }
+        val fromList: View = if (pages.isNotEmpty()) pageHost else listFor(tab)
         searchActive = true
         if (tab == Tab.SHORTS) shorts.onHidden()
         val full = dock.width - dp(64)
@@ -2346,6 +2372,8 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             .setInterpolator(OvershootInterpolator(1.6f)).start()
         showSearchIdle()
         showContent()
+        // the same slide-and-fade as between the tabs
+        if (fromList !== pageHost) crossfade(fromList, searchList, 1)
         placeMini()
         if (focus) {
             field.requestFocus()
@@ -2385,6 +2413,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         searchBack.animate().alpha(0f).scaleX(0.4f).scaleY(0.4f).setStartDelay(0).setDuration(180L)
             .withEndAction { if (!searchActive) searchBack.visibility = View.INVISIBLE }.start()
         showContent()
+        if (pages.isEmpty()) crossfade(searchList, listFor(tab), -1)
         barCollapse = 0f
         collapseTarget = 0f
         applyDockLayout()

@@ -300,13 +300,10 @@ class VideoAdapter(
                 sub.visibility = if (row.subtitle.isNullOrEmpty()) View.GONE else View.VISIBLE
                 v.background = Glass.pill(ctx, dp(ctx, 20).toFloat())
                 val box = v.findViewById<View>(R.id.iconBox)
-                box.background = GradientDrawable().apply {
-                    cornerRadius = dp(ctx, 12).toFloat()
-                    setColor(ContextCompat.getColor(ctx, R.color.accent))
-                }
+                box.background = Glass.iconTile(ctx, dp(ctx, 12).toFloat())
                 v.findViewById<ImageView>(R.id.icon).apply {
                     setImageResource(row.icon)
-                    setColorFilter(Color.WHITE)
+                    setColorFilter(Glass.textColor(ctx))
                 }
                 val ch = v.findViewById<ImageView>(R.id.chevron)
                 ch.setColorFilter(ContextCompat.getColor(ctx, R.color.text_muted))
