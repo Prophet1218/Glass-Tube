@@ -10,6 +10,7 @@ import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import androidx.core.graphics.ColorUtils
 
@@ -51,6 +52,8 @@ class GlassSwitch @JvmOverloads constructor(
 
     fun setChecked(value: Boolean, animate: Boolean = false) {
         if (value == isChecked && !animate) {
+            // a rebind during the toggle animation must not make the knob jump
+            if (posAnim?.isRunning == true) return
             pos = if (value) 1f else 0f
             invalidate()
             return
@@ -68,8 +71,8 @@ class GlassSwitch @JvmOverloads constructor(
     private fun animatePos(target: Float) {
         posAnim?.cancel()
         posAnim = ValueAnimator.ofFloat(pos, target).apply {
-            duration = 380L
-            interpolator = OvershootInterpolator(1.6f)
+            duration = 360L
+            interpolator = OvershootInterpolator(0.9f)
             addUpdateListener {
                 pos = it.animatedValue as Float
                 invalidate()
@@ -81,8 +84,8 @@ class GlassSwitch @JvmOverloads constructor(
     private fun animatePress(target: Float) {
         pressAnim?.cancel()
         pressAnim = ValueAnimator.ofFloat(press, target).apply {
-            duration = if (target > press) 160L else 320L
-            interpolator = OvershootInterpolator(1.2f)
+            duration = if (target > press) 180L else 300L
+            interpolator = DecelerateInterpolator(1.6f)
             addUpdateListener {
                 press = it.animatedValue as Float
                 invalidate()
@@ -129,28 +132,36 @@ class GlassSwitch @JvmOverloads constructor(
         canvas.drawRoundRect(rect, trackH / 2f, trackH / 2f, paint)
 
         // knob: wider and taller while pressed
-        val kw = knob + 12f * d * press
-        val kh = knob + 6f * d * press
+        val pr = press.coerceIn(0f, 1f)
+        val kw = knob + 8f * d * pr
+        val kh = knob + 3f * d * pr
         val inset = (trackH - knob) / 2f
-        val travel = trackW - knob - inset * 2
-        val cx = left + inset + knob / 2f + travel * pos
+        // the knob (even the grown one) stays inside the track; the spring only squashes it
+        val minC = left + inset + kw / 2f
+        val maxC = left + trackW - inset - kw / 2f
+        val raw = minC + (maxC - minC) * pos
+        val over = if (raw < minC) minC - raw else if (raw > maxC) raw - maxC else 0f
+        val cx = raw.coerceIn(minC, maxC)
         val cy = top + trackH / 2f
-        rect.set(cx - kw / 2f, cy - kh / 2f, cx + kw / 2f, cy + kh / 2f)
+        val squash = (over * 0.6f).coerceAtMost(4f * d)
+        val w2 = kw / 2f - squash / 2f
+        val sh = if (raw < minC) -squash / 2f else squash / 2f
+        rect.set(cx - w2 + sh, cy - kh / 2f, cx + w2 + sh, cy + kh / 2f)
         val r = kh / 2f
         // white knob fades into clear glass
-        paint.color = Color.argb((255 * (1f - 0.82f * press)).toInt(), 255, 255, 255)
-        paint.setShadowLayer(3f * d * (1f - press), 0f, 1f * d, Color.argb(50, 0, 0, 0))
+        paint.color = Color.argb((255 * (1f - 0.8f * pr)).toInt(), 255, 255, 255)
+        paint.setShadowLayer(0.5f * d + 2.5f * d * (1f - pr), 0f, 1f * d, Color.argb((50 * (1f - pr)).toInt(), 0, 0, 0))
         canvas.drawRoundRect(rect, r, r, paint)
         paint.clearShadowLayer()
-        if (press > 0.01f) {
+        if (pr > 0.01f) {
             paint.shader = android.graphics.LinearGradient(
                 0f, rect.top, 0f, rect.bottom,
-                Color.argb((90 * press).toInt(), 255, 255, 255), Color.argb((10 * press).toInt(), 255, 255, 255),
+                Color.argb((90 * pr).toInt(), 255, 255, 255), Color.argb((10 * pr).toInt(), 255, 255, 255),
                 android.graphics.Shader.TileMode.CLAMP
             )
             canvas.drawRoundRect(rect, r, r, paint)
             paint.shader = null
-            rim.color = Color.argb((200 * press).toInt(), 255, 255, 255)
+            rim.color = Color.argb((200 * pr).toInt(), 255, 255, 255)
             canvas.drawRoundRect(rect, r, r, rim)
         }
     }

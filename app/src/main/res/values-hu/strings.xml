@@ -161,4 +161,17 @@
     <string name="subscriptions_here">Feliratkozások</string>
     <string name="subtitles">Feliratok</string>
     <string name="sync_failed">Nem sikerült betölteni a YouTube-feliratkozásaidat</string>
+    <string name="app_icon">Alkalmazásikon</string>
+    <string name="icon_style_flat">Sima</string>
+    <string name="icon_style_frost">Matt üveg</string>
+    <string name="icon_style_liquid">Folyékony üveg</string>
+    <string name="icon_style_mono">Szürke alap</string>
+    <string name="icon_color_blue">kék</string>
+    <string name="icon_color_purple">lila</string>
+    <string name="icon_color_green">zöld</string>
+    <string name="icon_color_orange">narancs</string>
+    <string name="icon_color_pink">szürke</string>
+    <string name="icon_color_graphite">grafit</string>
+    <string name="icon_changed">Ikon átállítva. A kezdőképernyőn néhány másodperc múlva frissül.</string>
+    <string name="icon_failed">Az ikont nem sikerült átállítani</string>
 </resources>

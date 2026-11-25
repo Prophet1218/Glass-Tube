@@ -567,7 +567,9 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         val l = lens ?: return
         val dockOn = dock.visibility == View.VISIBLE && dock.alpha > 0.02f
         if (dockOn) {
-            slot(l, 0, tabIndicator, null, pressP)
+            // the pressed capsule is clear glass through a hole in the bar's frost; it doesn't get
+            // a lens of its own (a lens inside the bar's lens refracted its own rim twice)
+            l.clearSlot(0)
             slot(l, 1, tabBar, null)
             slot(l, 2, if (searchBar.visibility == View.VISIBLE) searchBar else searchButton, null)
             slot(l, 3, searchBack, null)
@@ -726,8 +728,19 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     /** Capsule size / glassiness and the tab icons under it. */
     private fun updateTabVisuals() {
         val p = pressP.coerceAtLeast(0f)
-        tabIndicator.scaleX = 1f + 0.12f * p
-        tabIndicator.scaleY = 1f + 0.3f * p
+        val sx = 1f + 0.1f * p
+        tabIndicator.scaleX = sx
+        tabIndicator.scaleY = 1f + 0.2f * p
+        // keep the grown capsule inside the bar: move the pivot instead of letting it poke out
+        val iwNow = indicatorWidth()
+        if (sx > 1.001f && iwNow > 0f) {
+            val x0 = tabIndicator.translationX
+            val scaledW = iwNow * sx
+            val want = (x0 + iwNow / 2f - scaledW / 2f).coerceIn(dpf(2f), fullBarWidth() - dpf(2f) - scaledW)
+            tabIndicator.pivotX = (want - x0) / (1f - sx)
+        } else {
+            tabIndicator.pivotX = iwNow / 2f
+        }
         indicatorFrost?.alpha = (255 * (1f - p).coerceIn(0f, 1f)).toInt()
         indicatorGlass?.alpha = (255 * p.coerceIn(0f, 1f)).toInt()
         val tw = tabWidth()
@@ -762,11 +775,11 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         if (p > 0.25f) {
             val w = tabIndicator.width
             val h = tabIndicator.height
-            val sx = tabIndicator.scaleX
+            val sx2 = tabIndicator.scaleX
             val sy = tabIndicator.scaleY
-            val l = tabIndicator.left + tabIndicator.translationX + w * (1f - sx) / 2f
+            val l = tabIndicator.left + tabIndicator.translationX + tabIndicator.pivotX * (1f - sx2)
             val t = tabIndicator.top + h * (1f - sy) / 2f
-            tmp.set(l, t, l + w * sx, t + h * sy)
+            tmp.set(l, t, l + w * sx2, t + h * sy)
             tabBarBg?.setHole(tmp, tmp.height() / 2f)
         } else {
             tabBarBg?.setHole(null, 0f)
@@ -1722,6 +1735,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     }
 
     private val openGroups = HashSet<String>()
+    private var iconPicker: View? = null
 
     private fun openSettingsPage() {
         val p = PageView(getString(R.string.settings))
@@ -1846,6 +1860,12 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
                     root.postDelayed({ recreate() }, 350)
                 }
             )
+        }
+
+        // ---- app icon
+        group("app_icon", R.drawable.ic_palette, R.string.app_icon, AppIcons.label(this, AppIcons.current(this))) {
+            val v = iconPicker ?: AppIcons.picker(this) { fillSettings(p) }.also { iconPicker = it }
+            listOf(Row.Custom(v))
         }
 
         // ---- history & privacy

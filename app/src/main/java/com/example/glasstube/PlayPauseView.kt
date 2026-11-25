@@ -65,10 +65,12 @@ class PlayPauseView @JvmOverloads constructor(
         }
     }
 
-    // 24x24 shapes; each half is a quad (play: halves of the triangle, pause: the bars)
-    private val playL = floatArrayOf(8f, 5f, 13.5f, 8.5f, 13.5f, 15.5f, 8f, 19f)
+    // 24x24 shapes; each half is a quad (play: halves of the triangle, pause: the bars).
+    // In the play shape the left half reaches past the seam along the exact triangle edges, so
+    // the two halves overlap and the rounded corners at the seam don't leave a notch.
+    private val playL = floatArrayOf(8f, 5f, 15.2f, 9.383f, 15.2f, 14.617f, 8f, 19f)
     private val pauseL = floatArrayOf(6.5f, 5f, 10.5f, 5f, 10.5f, 19f, 6.5f, 19f)
-    private val playR = floatArrayOf(13.5f, 8.5f, 19.5f, 12f, 19.5f, 12f, 13.5f, 15.5f)
+    private val playR = floatArrayOf(13.5f, 8.348f, 19.5f, 12f, 19.5f, 12f, 13.5f, 15.652f)
     private val pauseR = floatArrayOf(13.5f, 5f, 17.5f, 5f, 17.5f, 19f, 13.5f, 19f)
 
     private fun quad(a: FloatArray, b: FloatArray, t: Float, s: Float, ox: Float, oy: Float) {

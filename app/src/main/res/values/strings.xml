@@ -162,4 +162,17 @@
     <string name="subscriptions_here">Subscriptions</string>
     <string name="subtitles">Subtitles</string>
     <string name="sync_failed">Couldn\'t load your YouTube subscriptions</string>
+    <string name="app_icon">App icon</string>
+    <string name="icon_style_flat">Plain</string>
+    <string name="icon_style_frost">Frosted glass</string>
+    <string name="icon_style_liquid">Liquid glass</string>
+    <string name="icon_style_mono">Grey base</string>
+    <string name="icon_color_blue">blue</string>
+    <string name="icon_color_purple">purple</string>
+    <string name="icon_color_green">green</string>
+    <string name="icon_color_orange">orange</string>
+    <string name="icon_color_pink">grey</string>
+    <string name="icon_color_graphite">graphite</string>
+    <string name="icon_changed">Icon changed. The home screen updates in a few seconds.</string>
+    <string name="icon_failed">Couldn\'t change the icon</string>
 </resources>

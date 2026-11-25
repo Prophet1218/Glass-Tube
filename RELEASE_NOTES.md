@@ -1,5 +1,7 @@
-## Glass Tube 0.5.0
+## Glass Tube 0.6.0
 
-- Pulling the player down: however little you pull, it goes to the mini player when you let go (only a quick fling back up keeps it open). The swipe speed was also measured wrongly before, which made it spring back
-- Your YouTube subscriptions are now copied to the app when signed in (at sign-in, every few hours, and whenever you open Subscriptions)
-- The tab bar shows only the icons, without labels
+- App icon chooser in Settings → App icon: the same four styles (plain, frosted glass, liquid glass, grey base) in the same six colours as Glass Browser
+- The pressed tab bar capsule no longer shows a doubled, magnified inner oval, a grey dot or a smear at the edge, and it stays inside the bar when it grows
+- Settings switches move smoothly: the knob no longer jumps, flickers or sticks out of the track
+- The play icon no longer has a notch in the middle (in the player and in the mini player)
+- New, smoother settings gear icon
