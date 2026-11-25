@@ -586,7 +586,8 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         }
         rectOf(v, tmp)
         val r = radius ?: (tmp.height() / 2f)
-        l.setSlot(index, tmp.left, tmp.top, tmp.right, tmp.bottom, r, dpf(2f), a.coerceIn(0f, 1f), if (refr < 1f) -refr else 0f)
+        // refr < 1: edge-only refraction (icon buttons), sharp inside so the icon stays crisp
+        l.setSlot(index, tmp.left, tmp.top, tmp.right, tmp.bottom, r, if (refr < 1f) 0f else dpf(2f), a.coerceIn(0f, 1f), if (refr < 1f) -refr else 0f)
     }
 
     private fun updateLens() {
@@ -607,13 +608,13 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             }
             slot(l, 2, tabBar, null)
             slot(l, 3, if (searchBar.visibility == View.VISIBLE) searchBar else searchButton, null)
-            slot(l, 4, searchBack, null, refr = 0.6f)
+            slot(l, 4, searchBack, null, refr = 0.8f)
         } else {
             for (i in listOf(0, 2, 3, 4)) l.clearSlot(i)
         }
         val top = pages.lastOrNull()
         if (suggestions.visibility == View.VISIBLE) slot(l, 5, suggestions, dpf(24f))
-        else if (top != null) slot(l, 5, top.back, null, refr = 0.6f)
+        else if (top != null) slot(l, 5, top.back, null, refr = 0.8f)
         else l.clearSlot(5)
         slot(l, 6, mini, null)
         // the tabs at the top of the home page: the bar, and its capsule as a drop of glass when pressed

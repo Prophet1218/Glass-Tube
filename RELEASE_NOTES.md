@@ -1,3 +1,3 @@
-## Glass Tube 1.3.1
+## Glass Tube 1.3.2
 
-- Back buttons look like before again, as real liquid glass with a visible edge, just with somewhat less refraction at the edges than originally
+- Back buttons: the liquid glass edge is back, but the refraction now stays in a thin band at the rim, so the arrow inside is no longer bent and smeared; it stays sharp

@@ -380,8 +380,14 @@ vec4 glass(vec2 c, vec4 rect, float radius, float d, float blur, float strength,
     }
     n = n * sign(p);
     float rh = max(min(refrHeight, radius), 1.0);
+    // small buttons with an icon inside (back buttons): the refraction stays in a thin band at
+    // the edge, so the icon in the middle is not bent along with the picture
+    if (lensIn < 0.0) {
+        rh = max(radius * 0.36, 1.0);
+    }
     float t = clamp(1.0 + d / rh, 0.0, 1.0);
-    float k = (1.0 - sqrt(1.0 - t * t)) * refrAmount * rs * refrScale;
+    float ra = lensIn < 0.0 ? min(refrAmount, rh * 1.2) : refrAmount;
+    float k = (1.0 - sqrt(1.0 - t * t)) * ra * rs * refrScale;
     vec2 off = n * k;
     // Domború üveg: a felület egy lekerekített "párna"; a pereme felé egyre meredekebb.
     // u = 0 a lapos közepén, 1 a peremen; tilt = a felület dőlése (a normális vízszintes része).
