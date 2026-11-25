@@ -1258,42 +1258,24 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         }
     }
 
-    /**
-     * Like YouTube: the header scrolls away with the list, comes back as soon as you scroll up a
-     * little, and settles fully in or out when the scroll stops.
-     */
-    private fun onHomeScrolled(dy: Int) {
+    /** The header is fixed to the top of the page: it moves exactly with the list. */
+    private fun onHomeScrolled(@Suppress("UNUSED_PARAMETER") dy: Int) {
         if (!::homeHeaderView.isInitialized) return
-        headerSnap?.cancel()
+        syncHeader()
+    }
+
+    private fun syncHeader() {
         val offset = homeList.computeVerticalScrollOffset().toFloat()
         val max = homeHeaderView.height.toFloat() + statusTop
-        headerShift = (headerShift + dy).coerceIn(0f, minOf(max, offset))
+        headerShift = offset.coerceIn(0f, max)
         applyHeaderShift()
     }
 
-    private fun settleHeader() {
-        val max = homeHeaderView.height.toFloat() + statusTop
-        val offset = homeList.computeVerticalScrollOffset().toFloat()
-        if (headerShift <= 0f || headerShift >= max) return
-        // near the top it simply follows the list
-        if (offset <= max && headerShift >= offset - 1f) return
-        val target = if (headerShift > homeHeaderView.height / 2f) max else 0f
-        headerSnap?.cancel()
-        headerSnap = ValueAnimator.ofFloat(headerShift, target).apply {
-            duration = 220
-            interpolator = DecelerateInterpolator(1.6f)
-            addUpdateListener {
-                headerShift = it.animatedValue as Float
-                applyHeaderShift()
-            }
-            start()
-        }
-    }
+    private fun settleHeader() = Unit
 
     private fun showHeader() {
         headerSnap?.cancel()
-        headerShift = 0f
-        if (::homeHeaderView.isInitialized) applyHeaderShift()
+        if (::homeHeaderView.isInitialized) homeList.post { syncHeader() }
     }
 
     private fun applyHeaderShift() {
@@ -1328,6 +1310,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
                     loadHome()
                     homeList.scrollToPosition(0)
                 }
+                homeList.post { syncHeader() }
                 homeList.translationX = shift
                 homeList.animate().alpha(1f).translationX(0f).setDuration(220)
                     .setInterpolator(DecelerateInterpolator(1.6f)).start()
