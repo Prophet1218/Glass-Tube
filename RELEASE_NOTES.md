@@ -1,3 +1,3 @@
-## Glass Tube 1.2.1
+## Glass Tube 1.2.2
 
-- The "Glass Tube" title and the tabs are now firmly attached to the top of the home page: they scroll away with the list and only come back when you scroll all the way up, instead of popping up over the videos as soon as you scroll back
+- While the player shrinks into the mini player or grows back, the page under the video (title, comments, up next) no longer slides over the app: it blurs and fades away quickly and only shows again near the full player

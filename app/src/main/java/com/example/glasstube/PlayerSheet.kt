@@ -685,8 +685,13 @@ class PlayerSheet(
         }
         sheetStatus.alpha = f
         details.visibility = if (shown && !fullscreen && !pip) View.VISIBLE else View.INVISIBLE
-        details.alpha = f
-        details.translationY = (1f - f) * dpf(220f)
+        // the page under the video (title, comments, up next) only shows near the full player:
+        // while the player shrinks or grows it blurs away quickly instead of sliding over the app
+        val dv = ((f - 0.62f) / 0.38f).coerceIn(0f, 1f)
+        val dEase = dv * dv * (3f - 2f * dv)
+        details.alpha = dEase
+        details.translationY = (1f - f) * dpf(120f)
+        applyDetailsBlur(if (shown) (1f - dEase) * dpf(22f) else 0f)
         val top = fullRect.bottom.toInt()
         if (details.paddingTop != top) details.setPadding(0, top, 0, host.navBottom() + dp(16))
         val cp = commentsPanel.layoutParams as FrameLayout.LayoutParams
@@ -710,6 +715,19 @@ class PlayerSheet(
     }
 
     private fun lerp(a: Float, b: Float, f: Float) = a + (b - a) * f
+
+    private var detailsBlur = -1
+
+    private fun applyDetailsBlur(radius: Float) {
+        if (Build.VERSION.SDK_INT < 31) return
+        val r = radius.toInt()
+        if (r == detailsBlur) return
+        detailsBlur = r
+        details.setRenderEffect(
+            if (r < 1 || details.alpha <= 0f) null
+            else android.graphics.RenderEffect.createBlurEffect(r.toFloat(), r.toFloat(), android.graphics.Shader.TileMode.CLAMP)
+        )
+    }
 
     // ================================================================ touch on the video
 
