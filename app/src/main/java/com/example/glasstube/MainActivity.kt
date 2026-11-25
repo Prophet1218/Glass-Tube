@@ -239,15 +239,17 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         store = Store(this)
         settings = Settings(this)
 
-        homeAdapter = VideoAdapter(onVideo = { openVideo(it) })
-        youAdapter = VideoAdapter(onVideo = { openVideo(it) })
+        homeAdapter = VideoAdapter(onVideo = { openVideo(it) }, onVideoLong = { videoActions(it) }, onChannel = { openChannel(it) })
+        youAdapter = VideoAdapter(onVideo = { openVideo(it) }, onVideoLong = { videoActions(it) }, onChannel = { openChannel(it) })
         searchAdapter = VideoAdapter(
             onVideo = { openVideo(it) },
             onHistory = { search(it) },
             onHistoryLong = {
                 history.remove(it)
                 if (currentQuery == null) showSearchIdle()
-            }
+            },
+            onVideoLong = { videoActions(it) },
+            onChannel = { openChannel(it) }
         )
         for ((rv, ad) in listOf(homeList to homeAdapter, youList to youAdapter, searchList to searchAdapter)) {
             rv.layoutManager = LinearLayoutManager(this)
@@ -321,6 +323,25 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         super.onDestroy()
     }
 
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (settings.pip && Build.VERSION.SDK_INT >= 26 && sheet.isOpen && sheet.isPlaying) {
+            try {
+                enterPictureInPictureMode(
+                    android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(16, 9)).build()
+                )
+            } catch (e: Exception) {
+                // not allowed on this device
+            }
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        sheet.setPipMode(isInPictureInPictureMode)
+        mini.visibility = if (isInPictureInPictureMode) View.INVISIBLE else if (miniShown) View.VISIBLE else View.GONE
+    }
+
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         sheet.onConfigurationChanged(newConfig)
@@ -355,13 +376,13 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         root.invalidate()
     }
 
-    override fun onNowPlaying(info: StreamInfo?) {
-        if (info == null) {
+    override fun onNowPlaying(title: String?, channel: String?) {
+        if (title == null) {
             miniShown = false
         } else {
             miniShown = true
-            miniTitle.text = info.name
-            miniChannel.text = info.uploaderName
+            miniTitle.text = title
+            miniChannel.text = channel
         }
         placeMini()
         applyListPadding()
@@ -379,6 +400,33 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         root.invalidate()
     }
 
+    override fun onOpenChannel(url: String) {
+        if (searchActive) collapseSearch()
+        openChannel(url)
+    }
+
+    override fun onVideoActions(video: Video) = videoActions(video)
+
+    /** Long press on a video: play next, save, download, share, channel. */
+    private fun videoActions(v: Video) {
+        val items = ArrayList<ActionSheet.Item>()
+        items.add(ActionSheet.Item(R.drawable.ic_playlist, getString(R.string.play_next)) {
+            if (sheet.isOpen) sheet.addToQueue(v) else openVideo(v)
+        })
+        items.add(ActionSheet.Item(R.drawable.ic_add, getString(R.string.save_to_playlist)) { PlaylistPicker.show(this, v) })
+        items.add(ActionSheet.Item(R.drawable.ic_download, getString(R.string.download) + " (${settings.downloadQuality}p)") {
+            Downloads.start(this, v.url, settings.downloadQuality)
+            Toast.makeText(this, R.string.download_started, Toast.LENGTH_SHORT).show()
+        })
+        items.add(ActionSheet.Item(R.drawable.ic_share, getString(R.string.action_share)) {
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, v.url), v.title))
+        })
+        v.channelUrl?.let { c ->
+            items.add(ActionSheet.Item(R.drawable.ic_person, getString(R.string.go_to_channel)) { openChannel(c) })
+        }
+        ActionSheet.show(this, v.title, items)
+    }
+
     override fun onSheetClosed() {
         miniShown = false
         placeMini()
@@ -393,7 +441,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         miniPlay.setColor(text)
         miniClose.setColorFilter(ColorUtils.setAlphaComponent(text, 170))
         miniPlay.setOnClickListener { sheet.togglePlay() }
-        miniClose.setOnClickListener { sheet.close() }
+        miniClose.setOnClickListener { sheet.dismiss() }
         mini.setOnTouchListener { _, ev -> sheet.forwardMiniTouch(ev) }
     }
 
@@ -562,6 +610,8 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     // ================================================================ tabs
 
     private val tabIcons = listOf(R.drawable.ic_home, R.drawable.ic_shorts, R.drawable.ic_person)
+    private val tabHalos = ArrayList<ImageView>()
+    private val tabIconViews = ArrayList<ImageView>()
 
     @SuppressLint("ClickableViewAccessibility")
     private fun setupTabs() {
@@ -570,9 +620,23 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             val item = LinearLayout(this)
             item.orientation = LinearLayout.VERTICAL
             item.gravity = Gravity.CENTER
+            // the icon over a blurred copy of itself: the white glow of the active tab
+            val frame = FrameLayout(this)
+            val halo = ImageView(this)
+            halo.setImageResource(tabIcons[i])
+            halo.alpha = 0f
+            if (Build.VERSION.SDK_INT >= 31) {
+                halo.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(dpf(5f), dpf(5f), android.graphics.Shader.TileMode.DECAL))
+            }
+            frame.addView(halo, FrameLayout.LayoutParams(dp(23), dp(23), Gravity.CENTER))
             val iv = ImageView(this)
             iv.setImageResource(tabIcons[i])
-            item.addView(iv, LinearLayout.LayoutParams(dp(23), dp(23)))
+            frame.addView(iv, FrameLayout.LayoutParams(dp(23), dp(23), Gravity.CENTER))
+            frame.clipChildren = false
+            item.clipChildren = false
+            item.addView(frame, LinearLayout.LayoutParams(dp(36), dp(27)))
+            tabHalos.add(halo)
+            tabIconViews.add(iv)
             val tv = TextView(this)
             tv.text = getString(labels[i])
             tv.textSize = 10f
@@ -674,18 +738,33 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         val tw = tabWidth()
         val center = tabIndicator.translationX + indicatorWidth() / 2f
         val text = Glass.textColor(this)
-        val accent = ContextCompat.getColor(this, R.color.accent)
+        val night = Glass.isNight(this)
+        val glowColor = if (night) Color.WHITE else Color.argb(255, 40, 44, 52)
+        val dim = ColorUtils.setAlphaComponent(text, 150)
+        val avatarTab = Account.isSignedIn(this) && Account.photo(this) != null
         tabViews.forEachIndexed { i, v ->
             val tc = tw * i + tw / 2f
             val near = (1f - abs(tc - center) / tw).coerceIn(0f, 1f)
             val s = 1f + 0.16f * p.coerceIn(0f, 1.2f) * near
             v.scaleX = s
             v.scaleY = s
-            val active = if (p > 0.05f) near > 0.5f else i == tab.ordinal
-            val col = if (active) accent else text
-            val iv = v.getChildAt(0) as ImageView
-            if (!(i == Tab.YOU.ordinal && Account.isSignedIn(this) && Account.photo(this) != null)) iv.setColorFilter(col)
-            (v.getChildAt(1) as TextView).setTextColor(col)
+            // glow: follows the capsule while dragging, otherwise the selected tab
+            val glow = if (p > 0.05f) near else if (i == tab.ordinal) 1f else 0f
+            val col = ColorUtils.blendARGB(dim, glowColor, glow)
+            val iv = tabIconViews[i]
+            val halo = tabHalos[i]
+            if (!(i == Tab.YOU.ordinal && avatarTab)) {
+                iv.setColorFilter(col)
+                halo.setColorFilter(glowColor)
+                halo.alpha = glow * (if (night) 0.95f else 0.45f)
+            } else {
+                halo.alpha = glow * 0.8f
+            }
+            halo.scaleX = 1.12f
+            halo.scaleY = 1.12f
+            val tv = v.getChildAt(1) as TextView
+            tv.setTextColor(col)
+            tv.setShadowLayer(dpf(6f) * glow + 0.01f, 0f, 0f, ColorUtils.setAlphaComponent(glowColor, (190 * glow * (if (night) 1f else 0.4f)).toInt()))
         }
         // the bar's frost gets a hole under the clear glass capsule
         if (p > 0.25f) {
@@ -779,7 +858,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         tab = t
         placeIndicator(animate)
         collapsedIcon.setImageResource(tabIcons[t.ordinal])
-        collapsedIcon.setColorFilter(ContextCompat.getColor(this, R.color.accent))
+        collapsedIcon.setColorFilter(Glass.textColor(this))
         if (old == Tab.SHORTS && t != Tab.SHORTS) shorts.onHidden()
         val from = listFor(old)
         showContent()
@@ -851,10 +930,21 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             iv.load(photo) { transformations(CircleCropTransformation()) }
         } else {
             iv.setImageResource(R.drawable.ic_person)
-            iv.setColorFilter(
-                if (tab == Tab.YOU) ContextCompat.getColor(this, R.color.accent) else Glass.textColor(this)
-            )
+            iv.setColorFilter(Glass.textColor(this))
         }
+        // the halo of the You tab: the avatar's round glow or the person icon
+        tabHalos.getOrNull(Tab.YOU.ordinal)?.let { h ->
+            if (Account.isSignedIn(this) && photo != null) {
+                h.setImageDrawable(GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.WHITE)
+                })
+                h.clearColorFilter()
+            } else {
+                h.setImageResource(R.drawable.ic_person)
+            }
+        }
+        updateTabVisuals()
     }
 
     // ================================================================ insets / scrolling
@@ -925,7 +1015,12 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     private fun homeHeader(): List<Row> {
         val rows = ArrayList<Row>()
         rows.add(Row.Title(getString(R.string.app_name), null))
-        if (Account.isSignedIn(this)) {
+        if (Account.isSignedIn(this) && Account.isExpired(this)) {
+            rows.add(Row.Message(getString(R.string.session_expired), getString(R.string.sign_in_again)) {
+                signIn.launch(Intent(this, SignInActivity::class.java))
+            })
+        }
+        if (Account.isSignedIn(this) || Subscriptions(this).all().isNotEmpty()) {
             rows.add(Row.Chips(listOf(getString(R.string.chip_for_you), getString(R.string.chip_subscriptions)), homeChip) {
                 if (it != homeChip) {
                     homeChip = it
@@ -944,14 +1039,22 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         homeJob = lifecycleScope.launch {
             try {
                 val videos = ArrayList<Video>()
-                if (Account.isSignedIn(this@MainActivity)) {
+                val signedOk = Account.isSignedIn(this@MainActivity) && !Account.isExpired(this@MainActivity)
+                if (signedOk) {
                     val id = if (homeChip == 1) Innertube.SUBSCRIPTIONS else Innertube.HOME
-                    val page = withContext(Dispatchers.IO) { Innertube.browse(this@MainActivity, id) }
-                    videos.addAll(page.videos)
-                    shorts.offer(page.shorts)
-                    homeContinuation = page.continuation
+                    try {
+                        val page = withContext(Dispatchers.IO) { Innertube.browse(this@MainActivity, id) }
+                        videos.addAll(page.videos)
+                        shorts.offer(page.shorts)
+                        homeContinuation = page.continuation
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // fall back to the local feed below
+                    }
                 }
-                if (videos.isEmpty()) videos.addAll(localRecommendations())
+                if (homeChip == 1 && videos.isEmpty()) videos.addAll(localSubscriptionFeed())
+                if (homeChip == 0 && videos.isEmpty()) videos.addAll(localRecommendations())
                 val rows = ArrayList<Row>(homeHeader())
                 if (videos.isEmpty()) {
                     rows.add(Row.Message(getString(R.string.home_empty), getString(R.string.retry)) { loadHome() })
@@ -969,6 +1072,33 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
                 )
             }
         }
+    }
+
+    /** Newest videos of the channels subscribed to on the phone. */
+    private suspend fun localSubscriptionFeed(): List<Video> = withContext(Dispatchers.IO) {
+        val subs = Subscriptions(this@MainActivity).all().take(15)
+        val jobs = subs.map { c ->
+            kotlinx.coroutines.async {
+                try {
+                    val info = org.schabi.newpipe.extractor.channel.ChannelInfo.getInfo(yt, c.url)
+                    val tab = info.tabs.firstOrNull { it.contentFilters.contains(org.schabi.newpipe.extractor.channel.tabs.ChannelTabs.VIDEOS) }
+                        ?: return@async emptyList<Pair<Long, Video>>()
+                    val tabInfo = org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo.getInfo(yt, tab)
+                    tabInfo.relatedItems.filterIsInstance<StreamInfoItem>().take(8).mapNotNull { item ->
+                        val v = Video.from(this@MainActivity, item)?.copy(avatar = c.avatar, channelUrl = c.url) ?: return@mapNotNull null
+                        val t = try {
+                            item.uploadDate?.instant?.toEpochMilli() ?: 0L
+                        } catch (e: Exception) {
+                            0L
+                        }
+                        t to v
+                    }
+                } catch (e: Exception) {
+                    emptyList()
+                }
+            }
+        }
+        jobs.flatMap { it.await() }.sortedByDescending { it.first }.map { it.second }.distinctBy { it.id }
     }
 
     /** Without an account: related videos of what was watched, recent searches, then trending. */
@@ -1050,6 +1180,23 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             rows.add(Row.Menu(R.drawable.ic_playlist, getString(R.string.playlists)) { openPlaylistsPage() })
         }
         rows.add(Row.Menu(R.drawable.ic_history, getString(R.string.history)) { openHistoryPage() })
+        val dls = Downloads.all(this)
+        rows.add(Row.Menu(R.drawable.ic_download, getString(R.string.downloads),
+            if (dls.isEmpty()) null else getString(R.string.n_videos, dls.size)) { openDownloadsPage() })
+        val subs = Subscriptions(this).all()
+        rows.add(Row.Menu(R.drawable.ic_person, getString(R.string.subscriptions_here),
+            if (subs.isEmpty()) null else getString(R.string.n_channels, subs.size)) { openSubscriptionsPage() })
+        val lists = store.playlistNames()
+        if (lists.isNotEmpty()) {
+            rows.add(Row.Section(getString(R.string.my_playlists)))
+            lists.forEach { name ->
+                val items = store.playlist(name)
+                rows.add(Row.Menu(R.drawable.ic_playlist, name, getString(R.string.n_videos, items.size), items.firstOrNull()?.thumb) {
+                    openLocalPlaylist(name)
+                })
+            }
+        }
+        rows.add(Row.Section(getString(R.string.settings)))
         rows.add(Row.Menu(R.drawable.ic_settings, getString(R.string.settings)) { openSettingsPage() })
         youAdapter.submit(rows)
 
@@ -1140,6 +1287,11 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
                     updateYouIcon()
                     if (tab == Tab.YOU) buildYouRowsOnly()
                 }
+            } catch (e: Innertube.SessionExpired) {
+                if (!Account.isExpired(this@MainActivity)) {
+                    Account.setExpired(this@MainActivity, true)
+                    loadHome()
+                }
             } catch (e: Exception) {
                 // keep the stored profile
             }
@@ -1164,8 +1316,10 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         val list: RecyclerView = view.findViewById(R.id.list)
         val back: FrameLayout = view.findViewById(R.id.back)
         val header: View = view.findViewById(R.id.header)
-        val adapter = VideoAdapter(onVideo = { openVideo(it) })
+        val adapter = VideoAdapter(onVideo = { openVideo(it) }, onVideoLong = { videoActions(it) }, onChannel = { openChannel(it) })
         var continuation: String? = null
+        /** Custom "next page" (channel tabs, NewPipe playlists). */
+        var moreFn: (() -> Unit)? = null
         var browseId: String? = null
         var job: Job? = null
 
@@ -1181,11 +1335,18 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
                 override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
                     val lm = rv.layoutManager as LinearLayoutManager
                     if (lm.findLastVisibleItemPosition() >= adapter.itemCount - 4 &&
-                        adapter.items.lastOrNull() == Row.Loading && continuation != null
-                    ) loadMore()
+                        adapter.items.lastOrNull() == Row.Loading
+                    ) {
+                        val f = moreFn
+                        if (f != null) f() else if (continuation != null) loadMore()
+                    }
                 }
             })
             applyInsets()
+        }
+
+        fun setTitle(t: String) {
+            view.findViewById<TextView>(R.id.title).text = t
         }
 
         fun applyInsets() {
@@ -1281,6 +1442,237 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         pushPage(p)
     }
 
+    // ---- channel page
+
+    private fun openChannel(url: String) {
+        val p = PageView("")
+        pushPage(p)
+        p.adapter.submit(listOf(Row.Loading))
+        p.job = lifecycleScope.launch {
+            try {
+                val info = withContext(Dispatchers.IO) { org.schabi.newpipe.extractor.channel.ChannelInfo.getInfo(yt, url) }
+                p.setTitle(info.name)
+                val header = LayoutInflater.from(this@MainActivity).inflate(R.layout.view_channel_header, p.list, false)
+                header.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                val banner = Format.pick(info.banners, 1280)
+                val bannerBox = header.findViewById<RatioFrameLayout>(R.id.bannerBox)
+                bannerBox.ratio = 4f
+                if (banner != null) header.findViewById<ImageView>(R.id.banner).load(banner) { crossfade(150) } else bannerBox.visibility = View.GONE
+                header.findViewById<ImageView>(R.id.avatar).load(Format.pick(info.avatars, 200)) { transformations(CircleCropTransformation()) }
+                header.findViewById<TextView>(R.id.name).text = info.name
+                header.findViewById<TextView>(R.id.subs).text =
+                    if (info.subscriberCount > 0) getString(R.string.subscribers, Format.count(this@MainActivity, info.subscriberCount)) else ""
+                val about = header.findViewById<TextView>(R.id.about)
+                about.text = info.description
+                about.visibility = if (info.description.isNullOrBlank()) View.GONE else View.VISIBLE
+                about.setOnClickListener { about.maxLines = if (about.maxLines == 2) Int.MAX_VALUE else 2 }
+                val ref = ChannelRef(info.url ?: url, info.name, Format.pick(info.avatars, 200))
+                header.findViewById<LinearLayout>(R.id.buttons).addView(SubscribeButton.create(this@MainActivity, ref))
+
+                val wanted = listOf(
+                    org.schabi.newpipe.extractor.channel.tabs.ChannelTabs.VIDEOS to R.string.ch_videos,
+                    org.schabi.newpipe.extractor.channel.tabs.ChannelTabs.SHORTS to R.string.tab_shorts,
+                    org.schabi.newpipe.extractor.channel.tabs.ChannelTabs.LIVESTREAMS to R.string.ch_live,
+                    org.schabi.newpipe.extractor.channel.tabs.ChannelTabs.PLAYLISTS to R.string.playlists
+                )
+                val tabs = wanted.mapNotNull { (f, label) ->
+                    info.tabs.firstOrNull { it.contentFilters.contains(f) }?.let { it to getString(label) }
+                }
+                val tabBox = header.findViewById<LinearLayout>(R.id.tabs)
+                fun showTab(index: Int) {
+                    tabBox.removeAllViews()
+                    tabs.forEachIndexed { i, (_, label) ->
+                        val chip = VideoAdapter.pill(this@MainActivity, label, i == index)
+                        chip.setOnClickListener { if (i != index) showTab(i) }
+                        tabBox.addView(chip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                            marginStart = dp(4)
+                            marginEnd = dp(4)
+                        })
+                    }
+                    val handler = tabs.getOrNull(index)?.first
+                    p.adapter.submit(listOf(Row.Custom(header), Row.Loading))
+                    if (handler == null) {
+                        p.adapter.submit(listOf(Row.Custom(header), Row.Message(getString(R.string.nothing_here))))
+                        return
+                    }
+                    var next: Page? = null
+                    var loading = false
+                    fun rowsOf(items: List<org.schabi.newpipe.extractor.InfoItem>): List<Row> = items.mapNotNull { item ->
+                        when (item) {
+                            is StreamInfoItem -> Video.from(this@MainActivity, item)?.let { Row.VideoRow(it.copy(avatar = null)) }
+                            is org.schabi.newpipe.extractor.playlist.PlaylistInfoItem -> Row.Menu(
+                                R.drawable.ic_playlist, item.name, if (item.streamCount > 0) getString(R.string.n_videos, item.streamCount.toInt()) else null,
+                                Format.pick(item.thumbnails, 480)
+                            ) { openNpPlaylist(item.url, item.name) }
+                            else -> null
+                        }
+                    }
+                    p.moreFn = {
+                        val pg = next
+                        if (pg != null && !loading && Page.isValid(pg)) {
+                            loading = true
+                            lifecycleScope.launch {
+                                try {
+                                    val res = withContext(Dispatchers.IO) {
+                                        org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo.getMoreItems(yt, handler, pg)
+                                    }
+                                    next = res.nextPage
+                                    p.adapter.append(rowsOf(res.items) + if (Page.isValid(next)) listOf(Row.Loading) else emptyList())
+                                } catch (e: Exception) {
+                                    p.adapter.append(listOf(Row.Message(Errors.text(this@MainActivity, e))))
+                                } finally {
+                                    loading = false
+                                }
+                            }
+                        }
+                    }
+                    p.job = lifecycleScope.launch {
+                        try {
+                            val tabInfo = withContext(Dispatchers.IO) {
+                                org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo.getInfo(yt, handler)
+                            }
+                            next = tabInfo.nextPage
+                            val rows = ArrayList<Row>()
+                            rows.add(Row.Custom(header))
+                            val items = rowsOf(tabInfo.relatedItems)
+                            if (items.isEmpty()) rows.add(Row.Message(getString(R.string.nothing_here)))
+                            rows.addAll(items)
+                            if (Page.isValid(next)) rows.add(Row.Loading)
+                            p.adapter.submit(rows)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            p.adapter.submit(listOf(Row.Custom(header), Row.Message(Errors.text(this@MainActivity, e))))
+                        }
+                    }
+                }
+                showTab(0)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                p.adapter.submit(listOf(Row.Message(Errors.text(this@MainActivity, e), getString(R.string.retry)) {
+                    popPage(animate = false)
+                    openChannel(url)
+                }))
+            }
+        }
+    }
+
+    /** A YouTube playlist through NewPipe (from search or a channel). */
+    private fun openNpPlaylist(url: String, title: String) {
+        val p = PageView(title)
+        pushPage(p)
+        p.adapter.submit(listOf(Row.Loading))
+        var next: Page? = null
+        var loading = false
+        p.moreFn = {
+            val pg = next
+            if (pg != null && !loading && Page.isValid(pg)) {
+                loading = true
+                lifecycleScope.launch {
+                    try {
+                        val res = withContext(Dispatchers.IO) { org.schabi.newpipe.extractor.playlist.PlaylistInfo.getMoreItems(yt, url, pg) }
+                        next = res.nextPage
+                        p.adapter.append(res.items.mapNotNull { Video.from(this@MainActivity, it)?.let { v -> Row.VideoRow(v) } } +
+                            if (Page.isValid(next)) listOf(Row.Loading) else emptyList())
+                    } catch (e: Exception) {
+                        p.adapter.append(listOf(Row.Message(Errors.text(this@MainActivity, e))))
+                    } finally {
+                        loading = false
+                    }
+                }
+            }
+        }
+        p.job = lifecycleScope.launch {
+            try {
+                val info = withContext(Dispatchers.IO) { org.schabi.newpipe.extractor.playlist.PlaylistInfo.getInfo(yt, url) }
+                next = info.nextPage
+                val rows = ArrayList<Row>()
+                info.relatedItems.mapNotNull { Video.from(this@MainActivity, it) }.forEach { rows.add(Row.VideoRow(it)) }
+                if (rows.isEmpty()) rows.add(Row.Message(getString(R.string.nothing_here)))
+                if (Page.isValid(next)) rows.add(Row.Loading)
+                p.adapter.submit(rows)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                p.adapter.submit(listOf(Row.Message(Errors.text(this@MainActivity, e))))
+            }
+        }
+    }
+
+    private fun openLocalPlaylist(name: String) {
+        val p = PageView(name)
+        fun fill() {
+            val items = store.playlist(name)
+            val rows = ArrayList<Row>()
+            if (items.isEmpty()) rows.add(Row.Message(getString(R.string.nothing_here)))
+            items.forEach { rows.add(Row.VideoRow(it)) }
+            rows.add(Row.Menu(R.drawable.ic_trash, getString(R.string.delete_playlist), null, chevron = false) {
+                store.deletePlaylist(name)
+                popPage()
+            })
+            p.adapter.submit(rows)
+        }
+        fill()
+        pushPage(p)
+    }
+
+    private fun openDownloadsPage() {
+        val p = PageView(getString(R.string.downloads))
+        fun fill() {
+            val list = Downloads.all(this)
+            val rows = ArrayList<Row>()
+            if (list.isEmpty()) rows.add(Row.Message(getString(R.string.downloads_empty)))
+            list.forEach { d ->
+                val sub = when (d.state) {
+                    "done" -> Format.joinDot(d.channel, if (d.height > 0) "${d.height}p" else null,
+                        android.text.format.Formatter.formatShortFileSize(this, d.bytes))
+                    "failed" -> getString(R.string.download_failed)
+                    else -> getString(R.string.downloading) + " ${d.progress}%"
+                }
+                rows.add(Row.Menu(R.drawable.ic_download, d.title, sub, d.thumb?.let { if (it.startsWith("/")) "file://$it" else it }, chevron = false) {
+                    when {
+                        d.done -> {
+                            popPage(animate = false)
+                            sheet.openDownload(d)
+                        }
+                        d.state == "failed" -> ActionSheet.show(this, d.title, listOf(
+                            ActionSheet.Item(R.drawable.ic_download, getString(R.string.retry)) {
+                                Downloads.delete(this, d.id)
+                                Downloads.start(this, "https://www.youtube.com/watch?v=${d.id}", settings.downloadQuality)
+                            },
+                            ActionSheet.Item(R.drawable.ic_trash, getString(R.string.delete)) {
+                                Downloads.delete(this, d.id)
+                                fill()
+                            }
+                        ))
+                    }
+                })
+            }
+            p.adapter.submit(rows)
+        }
+        fill()
+        pushPage(p)
+        // refresh while something is downloading
+        p.job = lifecycleScope.launch {
+            while (true) {
+                delay(1500)
+                fill()
+                if (Downloads.all(this@MainActivity).none { it.state == "downloading" }) break
+            }
+        }
+    }
+
+    private fun openSubscriptionsPage() {
+        val p = PageView(getString(R.string.subscriptions_here))
+        val list = Subscriptions(this).all()
+        val rows = ArrayList<Row>()
+        if (list.isEmpty()) rows.add(Row.Message(getString(R.string.subscriptions_empty)))
+        list.forEach { c -> rows.add(Row.ChannelRow(c.name, c.avatar, null) { openChannel(c.url) }) }
+        p.adapter.submit(rows)
+        pushPage(p)
+    }
+
     private fun openPlaylistsPage() {
         val p = PageView(getString(R.string.playlists))
         pushPage(p)
@@ -1335,6 +1727,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         val mobile = listOf(0, 480, 720, 1080)
         val speeds = listOf(75, 100, 125, 150, 200)
         val steps = listOf(5, 10, 15, 30)
+        val dlq = listOf(360, 480, 720, 1080)
         group("playback", R.drawable.ic_play, R.string.settings_playback,
             "${settings.maxQuality}p · " + speedText(settings.speedPercent)) {
             listOf(
@@ -1369,8 +1762,35 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
                 },
                 Row.Toggle(R.drawable.ic_history, getString(R.string.resume), getString(R.string.resume_sub), settings.resume) {
                     settings.resume = it
+                },
+                Row.Toggle(R.drawable.ic_fullscreen_exit, getString(R.string.pip), getString(R.string.pip_sub), settings.pip) {
+                    settings.pip = it
+                },
+                Row.Choice(getString(R.string.download_quality), null, dlq.map { "${it}p" },
+                    dlq.indexOf(settings.downloadQuality).coerceAtLeast(2)) {
+                    settings.downloadQuality = dlq[it]
+                    refresh()
                 }
             )
+        }
+
+        // ---- SponsorBlock
+        group("sponsorblock", R.drawable.ic_sponsor, R.string.sponsorblock,
+            getString(if (settings.sponsorBlock) R.string.on else R.string.off)) {
+            val list = ArrayList<Row>()
+            list.add(Row.Toggle(R.drawable.ic_sponsor, getString(R.string.sponsorblock), getString(R.string.sponsorblock_sub), settings.sponsorBlock) {
+                settings.sponsorBlock = it
+                refresh()
+            })
+            if (settings.sponsorBlock) {
+                val cats = settings.sbCategories
+                SponsorBlock.CATEGORIES.keys.forEach { c ->
+                    list.add(Row.Toggle(R.drawable.ic_sponsor, SponsorBlock.label(this, c), null, c in cats) { on ->
+                        settings.sbCategories = if (on) settings.sbCategories + c else settings.sbCategories - c
+                    })
+                }
+            }
+            list
         }
 
         // ---- shorts
@@ -1721,6 +2141,45 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         searchList.scrollToPosition(0)
     }
 
+    private var searchFilter = 0
+
+    private fun searchFilters(): List<String> = listOf(
+        YoutubeSearchQueryHandlerFactory.VIDEOS,
+        YoutubeSearchQueryHandlerFactory.CHANNELS,
+        YoutubeSearchQueryHandlerFactory.PLAYLISTS
+    )
+
+    private fun searchHeader(query: String): List<Row> = listOf(
+        Row.Title(query, null),
+        Row.Chips(listOf(getString(R.string.ch_videos), getString(R.string.channels), getString(R.string.playlists)), searchFilter) {
+            if (it != searchFilter) {
+                searchFilter = it
+                currentQuery = null
+                search(query)
+            }
+        }
+    )
+
+    /** Search results of any kind as rows. */
+    private fun resultRows(items: List<org.schabi.newpipe.extractor.InfoItem>): List<Row> = items.mapNotNull { item ->
+        when (item) {
+            is StreamInfoItem -> Video.from(this, item)?.let { Row.VideoRow(it) }
+            is org.schabi.newpipe.extractor.channel.ChannelInfoItem -> Row.ChannelRow(
+                item.name, Format.pick(item.thumbnails, 160),
+                Format.joinDot(
+                    if (item.subscriberCount > 0) getString(R.string.subscribers, Format.count(this, item.subscriberCount)) else null,
+                    item.description?.takeIf { it.isNotBlank() }
+                )
+            ) { openChannel(item.url) }
+            is org.schabi.newpipe.extractor.playlist.PlaylistInfoItem -> Row.Menu(
+                R.drawable.ic_playlist, item.name,
+                Format.joinDot(item.uploaderName, if (item.streamCount > 0) getString(R.string.n_videos, item.streamCount.toInt()) else null),
+                Format.pick(item.thumbnails, 480)
+            ) { openNpPlaylist(item.url, item.name) }
+            else -> null
+        }
+    }
+
     private fun search(raw: String) {
         val query = raw.trim()
         if (query.isEmpty()) return
@@ -1734,25 +2193,24 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         currentQuery = query
         queryHandler = null
         nextPage = null
-        searchAdapter.submit(listOf(Row.Title(query, null), Row.Loading))
+        searchAdapter.submit(searchHeader(query) + Row.Loading)
         searchList.scrollToPosition(0)
 
         searchJob = lifecycleScope.launch {
             try {
                 val (handler, info) = withContext(Dispatchers.IO) {
-                    val h = yt.searchQHFactory.fromQuery(query, listOf(YoutubeSearchQueryHandlerFactory.VIDEOS), "")
+                    val h = yt.searchQHFactory.fromQuery(query, listOf(searchFilters()[searchFilter]), "")
                     h to SearchInfo.getInfo(yt, h)
                 }
                 if (currentQuery != query) return@launch
                 queryHandler = handler
-                val videos = info.relatedItems.filterIsInstance<StreamInfoItem>().mapNotNull { Video.from(this@MainActivity, it) }
+                val found = resultRows(info.relatedItems)
                 nextPage = info.nextPage.takeIf { Page.isValid(it) }
-                val rows = ArrayList<Row>()
-                rows.add(Row.Title(query, null))
-                if (videos.isEmpty()) {
+                val rows = ArrayList<Row>(searchHeader(query))
+                if (found.isEmpty()) {
                     rows.add(Row.Message(getString(R.string.no_results)))
                 } else {
-                    videos.forEach { rows.add(Row.VideoRow(it)) }
+                    rows.addAll(found)
                     if (nextPage != null) rows.add(Row.Loading)
                 }
                 searchAdapter.submit(rows)
@@ -1761,10 +2219,10 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             } catch (e: Exception) {
                 if (currentQuery != query) return@launch
                 searchAdapter.submit(
-                    listOf(
-                        Row.Title(query, null),
-                        Row.Message(Errors.text(this@MainActivity, e), getString(R.string.retry)) { search(query) }
-                    )
+                    searchHeader(query) + Row.Message(Errors.text(this@MainActivity, e), getString(R.string.retry)) {
+                        currentQuery = null
+                        search(query)
+                    }
                 )
             }
         }
@@ -1782,8 +2240,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
                 if (currentQuery != query) return@launch
                 nextPage = res.nextPage.takeIf { Page.isValid(it) }
                 val rows = ArrayList<Row>()
-                res.items.filterIsInstance<StreamInfoItem>().mapNotNull { Video.from(this@MainActivity, it) }
-                    .forEach { rows.add(Row.VideoRow(it)) }
+                rows.addAll(resultRows(res.items))
                 if (nextPage != null) rows.add(Row.Loading)
                 searchAdapter.append(rows)
             } catch (e: CancellationException) {

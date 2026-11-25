@@ -65,6 +65,7 @@ sealed class Row {
         val expanded: Boolean,
         val onToggle: () -> Unit
     ) : Row()
+    data class ChannelRow(val name: String, val avatar: String?, val subtitle: String?, val onClick: () -> Unit) : Row()
     data class Comment(
         val author: String,
         val avatar: String?,
@@ -102,7 +103,9 @@ private fun Row.content(): String = when (this) {
 class VideoAdapter(
     private val onVideo: (Video) -> Unit,
     private val onHistory: (String) -> Unit = {},
-    private val onHistoryLong: (String) -> Unit = {}
+    private val onHistoryLong: (String) -> Unit = {},
+    private val onVideoLong: ((Video) -> Unit)? = null,
+    private val onChannel: ((String) -> Unit)? = null
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private val rows = ArrayList<Row>()
@@ -160,6 +163,7 @@ class VideoAdapter(
         is Row.Space -> 11
         is Row.Group -> 12
         is Row.Comment -> 13
+        is Row.ChannelRow -> 14
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
@@ -177,6 +181,7 @@ class VideoAdapter(
             10 -> R.layout.item_choice
             12 -> R.layout.item_group
             13 -> R.layout.item_comment
+            14 -> R.layout.item_channel
             else -> 0
         }
         if (layout == 0) {
@@ -190,7 +195,7 @@ class VideoAdapter(
         if (viewType == 8) {
             val rv = v as RecyclerView
             rv.layoutManager = LinearLayoutManager(parent.context, LinearLayoutManager.HORIZONTAL, false)
-            rv.adapter = StripAdapter(onVideo)
+            rv.adapter = StripAdapter(onVideo, onVideoLong)
         }
         return object : RecyclerView.ViewHolder(v) {}
     }
@@ -316,6 +321,14 @@ class VideoAdapter(
                 v.tag = row.key
                 v.setOnClickListener { row.onToggle() }
             }
+            is Row.ChannelRow -> {
+                v.findViewById<ImageView>(R.id.avatar).load(row.avatar) { transformations(CircleCropTransformation()) }
+                v.findViewById<TextView>(R.id.title).text = row.name
+                val sub = v.findViewById<TextView>(R.id.subtitle)
+                sub.text = row.subtitle
+                sub.visibility = if (row.subtitle.isNullOrEmpty()) View.GONE else View.VISIBLE
+                v.setOnClickListener { row.onClick() }
+            }
             is Row.Comment -> {
                 v.findViewById<ImageView>(R.id.avatar).load(row.avatar) { transformations(CircleCropTransformation()) }
                 v.findViewById<TextView>(R.id.meta).text = Format.joinDot(row.author, row.date)
@@ -381,7 +394,13 @@ class VideoAdapter(
         } else {
             avatar.visibility = View.GONE
         }
+        val curl = video.channelUrl
+        if (curl != null && onChannel != null) avatar.setOnClickListener { onChannel.invoke(curl) } else avatar.setOnClickListener(null)
         v.setOnClickListener { onVideo(video) }
+        if (onVideoLong != null) v.setOnLongClickListener {
+            onVideoLong.invoke(video)
+            true
+        } else v.setOnLongClickListener(null)
     }
 
     companion object {
@@ -433,7 +452,10 @@ class VideoAdapter(
 }
 
 /** The horizontal history strip. */
-class StripAdapter(private val onVideo: (Video) -> Unit) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+class StripAdapter(
+    private val onVideo: (Video) -> Unit,
+    private val onLong: ((Video) -> Unit)? = null
+) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     private val list = ArrayList<Video>()
 
     @SuppressLint("NotifyDataSetChanged")
@@ -458,5 +480,9 @@ class StripAdapter(private val onVideo: (Video) -> Unit) : RecyclerView.Adapter<
         v.findViewById<TextView>(R.id.title).text = video.title
         v.findViewById<TextView>(R.id.meta).text = video.channel.orEmpty()
         v.setOnClickListener { onVideo(video) }
+        if (onLong != null) v.setOnLongClickListener {
+            onLong.invoke(video)
+            true
+        }
     }
 }

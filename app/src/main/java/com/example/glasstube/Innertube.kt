@@ -86,11 +86,20 @@ object Innertube {
         post(ctx, endpoint, JSONObject().put("target", JSONObject().put("videoId", videoId)))
     }
 
+    /** Subscribes to / unsubscribes from a channel ([channelId] = "UC..."). */
+    fun subscribe(ctx: Context, channelId: String, on: Boolean) {
+        post(ctx, if (on) "subscription/subscribe" else "subscription/unsubscribe",
+            JSONObject().put("channelIds", JSONArray().put(channelId)))
+    }
+
+    /** Thrown when YouTube no longer accepts the saved sign-in. */
+    class SessionExpired : IOException("Google sign-in expired")
+
     /** Name, handle and photo of the signed-in account. */
     fun accountInfo(ctx: Context): Triple<String?, String?, String?> {
         val r = post(ctx, "account/account_menu", JSONObject())
         val header = find(r, "activeAccountHeaderRenderer") as? JSONObject
-            ?: return Triple(null, null, null)
+            ?: throw SessionExpired()
         val name = text(header.optJSONObject("accountName"))
         val handle = text(header.optJSONObject("channelHandle"))
         val photo = bestThumb(header.optJSONObject("accountPhoto"))
@@ -171,6 +180,7 @@ object Innertube {
             id = id,
             title = title,
             channel = text(byline),
+            channelUrl = channelUrlOf(byline),
             avatar = avatar,
             thumb = bestThumb(o.optJSONObject("thumbnail")) ?: "https://i.ytimg.com/vi/$id/hqdefault.jpg",
             durationSec = duration,
@@ -235,6 +245,7 @@ object Innertube {
                     Video(
                         id = id,
                         title = title,
+                        channelUrl = channelUrlOf(meta),
                         channel = rows.getOrNull(0)?.firstOrNull(),
                         avatar = avatar,
                         thumb = thumb ?: "https://i.ytimg.com/vi/$id/hqdefault.jpg",
@@ -260,6 +271,14 @@ object Innertube {
     }
 
     // ------------------------------------------------------------------ helpers
+
+    private fun channelUrlOf(node: Any?): String? {
+        val be = find(node, "browseEndpoint") as? JSONObject ?: return null
+        val base = be.optString("canonicalBaseUrl")
+        if (base.startsWith("/")) return "https://www.youtube.com$base"
+        val id = be.optString("browseId")
+        return if (id.startsWith("UC")) "https://www.youtube.com/channel/$id" else null
+    }
 
     /** Text of {simpleText}, {runs:[{text}]} or {content}. */
     fun text(o: JSONObject?): String? {

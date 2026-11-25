@@ -27,12 +27,19 @@ object Account {
         val cm = CookieManager.getInstance()
         val c = cm.getCookie(ORIGIN) ?: return false
         if (sapisid(c) == null) return false
-        prefs(ctx).edit().putString("cookies", c).apply()
+        prefs(ctx).edit().putString("cookies", c).putBoolean("expired", false).apply()
         return true
     }
 
     fun saveProfile(ctx: Context, name: String?, handle: String?, photo: String?) {
         prefs(ctx).edit().putString("name", name).putString("handle", handle).putString("photo", photo).apply()
+    }
+
+    /** YouTube stopped accepting the saved sign-in (cookies expired): ask to sign in again. */
+    fun isExpired(ctx: Context): Boolean = prefs(ctx).getBoolean("expired", false)
+
+    fun setExpired(ctx: Context, v: Boolean) {
+        prefs(ctx).edit().putBoolean("expired", v).apply()
     }
 
     fun signOut(ctx: Context) {

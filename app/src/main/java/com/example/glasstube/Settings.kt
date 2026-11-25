@@ -47,6 +47,30 @@ class Settings(ctx: Context) {
         get() = int("seek_step", 10)
         set(v) = put("seek_step", v)
 
+    /** Picture-in-picture when leaving the app during a video. */
+    var pip: Boolean
+        get() = bool("pip", true)
+        set(v) = put("pip", v)
+
+    /** Remembered subtitle language ("" = off). */
+    var subtitleLang: String
+        get() = prefs.getString("subtitle_lang", "") ?: ""
+        set(v) = prefs.edit().putString("subtitle_lang", v).apply()
+
+    /** Resolution for downloads (short side). */
+    var downloadQuality: Int
+        get() = int("download_quality", 720)
+        set(v) = put("download_quality", v)
+
+    // ---- SponsorBlock
+    var sponsorBlock: Boolean
+        get() = bool("sponsorblock", true)
+        set(v) = put("sponsorblock", v)
+
+    var sbCategories: Set<String>
+        get() = prefs.getStringSet("sb_categories", setOf("sponsor", "selfpromo", "interaction")) ?: emptySet()
+        set(v) = prefs.edit().putStringSet("sb_categories", HashSet(v)).apply()
+
     // ---- shorts
     var shortsLoop: Boolean
         get() = bool("shorts_loop", true)

@@ -116,6 +116,65 @@ class Store(ctx: Context) {
         prefs.edit().putString(key, JSONArray(list.map { it.toJson() }).toString()).apply()
     }
 
+    // ---- own playlists (kept on the phone)
+
+    fun playlistNames(): List<String> =
+        try {
+            val o = JSONObject(prefs.getString("playlists", "{}"))
+            o.keys().asSequence().toList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+
+    fun playlist(name: String): List<Video> {
+        val o = try {
+            JSONObject(prefs.getString("playlists", "{}"))
+        } catch (e: Exception) {
+            return emptyList()
+        }
+        val arr = o.optJSONArray(name) ?: return emptyList()
+        val out = ArrayList<Video>()
+        for (i in 0 until arr.length()) {
+            try {
+                out.add(Video.fromJson(arr.getJSONObject(i)))
+            } catch (e: Exception) {
+                // skip
+            }
+        }
+        return out
+    }
+
+    fun addToPlaylist(name: String, v: Video) {
+        val o = try {
+            JSONObject(prefs.getString("playlists", "{}"))
+        } catch (e: Exception) {
+            JSONObject()
+        }
+        val list = playlist(name).filterNot { it.id == v.id } + v
+        o.put(name, JSONArray(list.map { it.toJson() }))
+        prefs.edit().putString("playlists", o.toString()).apply()
+    }
+
+    fun removeFromPlaylist(name: String, id: String) {
+        val o = try {
+            JSONObject(prefs.getString("playlists", "{}"))
+        } catch (e: Exception) {
+            return
+        }
+        o.put(name, JSONArray(playlist(name).filterNot { it.id == id }.map { it.toJson() }))
+        prefs.edit().putString("playlists", o.toString()).apply()
+    }
+
+    fun deletePlaylist(name: String) {
+        val o = try {
+            JSONObject(prefs.getString("playlists", "{}"))
+        } catch (e: Exception) {
+            return
+        }
+        o.remove(name)
+        prefs.edit().putString("playlists", o.toString()).apply()
+    }
+
     companion object {
         private const val MAX_HISTORY = 200
         private const val MAX_SOURCES = 8

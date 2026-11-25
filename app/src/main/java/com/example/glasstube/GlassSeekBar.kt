@@ -70,6 +70,23 @@ class GlassSeekBar @JvmOverloads constructor(
     private var touch = 0f
     private var anim: ValueAnimator? = null
 
+    /** Coloured parts (SponsorBlock): start ms, end ms, colour. */
+    var marks: List<Triple<Long, Long, Int>> = emptyList()
+        set(v) {
+            field = v
+            invalidate()
+        }
+
+    /** Chapter starts in ms (small gaps are drawn there). */
+    var chapters: List<Long> = emptyList()
+        set(v) {
+            field = v
+            invalidate()
+        }
+
+    private val markPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val gapPaint = Paint().apply { color = Color.argb(200, 0, 0, 0) }
+
     /** Glow strength while not touched (0 = none). */
     var restGlow = 0f
         set(v) {
@@ -159,6 +176,16 @@ class GlassSeekBar @JvmOverloads constructor(
             canvas.drawRoundRect(rect, r, r, buffer)
         }
 
+        for ((ms, me, col) in marks) {
+            val mx1 = left + (right - left) * (ms.toFloat() / dur).coerceIn(0f, 1f)
+            val mx2 = left + (right - left) * (me.toFloat() / dur).coerceIn(0f, 1f)
+            if (mx2 - mx1 < 1f) continue
+            markPaint.color = col
+            markPaint.alpha = 210
+            rect.set(mx1, top, mx2, bottom)
+            canvas.drawRect(rect, markPaint)
+        }
+
         val head = px.coerceAtLeast(left + thick)
         // comet-like glow trailing behind the head (stronger while dragging)
         val g = (restGlow + (1f - restGlow) * touch).coerceIn(0f, 1f)
@@ -193,6 +220,11 @@ class GlassSeekBar @JvmOverloads constructor(
             }
             rect.set(left, top, head, bottom)
             canvas.drawRoundRect(rect, r, r, played)
+        }
+        for (c in chapters) {
+            if (c <= 0) continue
+            val cx = left + (right - left) * (c.toFloat() / dur).coerceIn(0f, 1f)
+            canvas.drawRect(cx - 1f * d, top - 0.5f, cx + 1f * d, bottom + 0.5f, gapPaint)
         }
     }
 }

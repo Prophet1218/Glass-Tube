@@ -54,6 +54,7 @@ class PlaybackService : MediaSessionService() {
             .setSeekForwardIncrementMs(10_000)
             .build()
         applyQualityLimit()
+        handler.post(skipLoop)
         val s = MediaSession.Builder(this, player).build()
         session = s
         addSession(s)
@@ -92,6 +93,9 @@ class PlaybackService : MediaSessionService() {
     /** Loads and starts [info]. */
     fun play(info: StreamInfo, startMs: Long = 0L) {
         val source = StreamResolver.build(info, metadataOf(info))
+        segments = emptyList()
+        skipped.clear()
+        currentDownload = null
         applyQualityLimit()
         player.playbackParameters = androidx.media3.common.PlaybackParameters(Settings(this).speedPercent / 100f)
         currentUrl = info.url
@@ -102,12 +106,57 @@ class PlaybackService : MediaSessionService() {
         player.playWhenReady = true
     }
 
+    /** Plays a downloaded video. */
+    fun playLocal(d: Download, startMs: Long = 0L) {
+        applyQualityLimit()
+        player.playbackParameters = androidx.media3.common.PlaybackParameters(Settings(this).speedPercent / 100f)
+        currentUrl = "local:" + d.id
+        currentInfo = null
+        currentDownload = d
+        session?.setSessionActivity(openPlayerIntent(currentUrl!!))
+        player.setMediaSource(StreamResolver.local(this, d), startMs)
+        player.prepare()
+        player.playWhenReady = true
+    }
+
+    var currentDownload: Download? = null
+        private set
+
+    // ---- SponsorBlock: segments of the current video, skipped while playing (also in the background)
+    var segments: List<Segment> = emptyList()
+    var onSkipped: ((Segment) -> Unit)? = null
+    private val skipped = HashSet<Segment>()
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val skipLoop = object : Runnable {
+        override fun run() {
+            val pos = player.currentPosition
+            if (player.isPlaying) {
+                for (s in segments) {
+                    if (pos >= s.startMs && pos < s.endMs - 500 && s !in skipped) {
+                        skipped.add(s)
+                        player.seekTo(s.endMs)
+                        onSkipped?.invoke(s)
+                        break
+                    }
+                }
+            }
+            handler.postDelayed(this, 400)
+        }
+    }
+
+    fun updateSegments(list: List<Segment>) {
+        segments = list
+        skipped.clear()
+    }
+
     /** Stops playback and removes the notification. */
     fun stopPlayback() {
         player.stop()
         player.clearMediaItems()
         currentUrl = null
         currentInfo = null
+        currentDownload = null
+        segments = emptyList()
         stopSelf()
     }
 
@@ -127,6 +176,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(skipLoop)
         session?.release()
         session = null
         player.release()

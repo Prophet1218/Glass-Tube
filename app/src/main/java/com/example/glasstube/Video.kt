@@ -17,7 +17,8 @@ data class Video(
     val viewsText: String? = null,
     val dateText: String? = null,
     val isShort: Boolean = false,
-    val isLive: Boolean = false
+    val isLive: Boolean = false,
+    val channelUrl: String? = null
 ) {
     val url: String get() = "https://www.youtube.com/watch?v=$id"
 
@@ -32,6 +33,7 @@ data class Video(
         put("date", dateText)
         put("short", isShort)
         put("live", isLive)
+        put("curl", channelUrl)
     }
 
     companion object {
@@ -49,7 +51,8 @@ data class Video(
             viewsText = o.optStringOrNull("views"),
             dateText = o.optStringOrNull("date"),
             isShort = o.optBoolean("short"),
-            isLive = o.optBoolean("live")
+            isLive = o.optBoolean("live"),
+            channelUrl = o.optStringOrNull("curl")
         )
 
         fun from(ctx: Context, item: StreamInfoItem): Video? {
@@ -68,7 +71,8 @@ data class Video(
                 viewsText = views,
                 dateText = Format.date(item.uploadDate, item.textualUploadDate),
                 isShort = item.isShortFormContent || item.url.contains("/shorts/"),
-                isLive = live
+                isLive = live,
+                channelUrl = item.uploaderUrl
             )
         }
 
@@ -82,7 +86,8 @@ data class Video(
                 thumb = Format.pick(info.thumbnails, 720),
                 durationSec = info.duration,
                 viewsText = if (info.viewCount >= 0) ctx.getString(R.string.views, Format.count(ctx, info.viewCount)) else null,
-                dateText = Format.date(info.uploadDate, info.textualUploadDate)
+                dateText = Format.date(info.uploadDate, info.textualUploadDate),
+                channelUrl = info.uploaderUrl
             )
         }
     }
