@@ -1,3 +1,3 @@
-## Glass Tube 1.3.12
+## Glass Tube 1.3.13
 
-- Profile picture tab: its white glow no longer covers the picture while the capsule shrinks back; it fades out during the press and returns when the capsule has settled
+- Tab glow under the pressed capsule: the glow stays on while you hold it and grows and moves together with the icon seen through the glass, so nothing pops when the capsule shrinks back (the profile picture's glow no longer fades out and jumps back)

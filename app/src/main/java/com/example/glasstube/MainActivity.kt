@@ -931,12 +931,14 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
                 halo.setColorFilter(glowColor)
                 halo.alpha = glow * (if (night) 0.95f else 0.45f)
             } else {
-                // the profile picture's glow is a white disc: while the capsule is pressed it would
-                // shine through the glass as a white blob, so it fades away during the press
-                halo.alpha = glow * 0.8f * (1f - (p * 2f).coerceIn(0f, 1f))
+                halo.alpha = glow * 0.8f
             }
-            halo.scaleX = 1.12f
-            halo.scaleY = 1.12f
+            // the glow grows and moves together with the icon seen through the glass (same
+            // magnification around the capsule's centre), so it stays right behind it
+            val m = if (g > 0f) 1f + 0.1f * pressP.coerceIn(0f, 1.2f) else 1f
+            halo.scaleX = 1.12f * m
+            halo.scaleY = 1.12f * m
+            halo.translationX = (tc - center) * (m - 1f) / s
         }
         // the bar's frost gets a hole under the clear glass capsule
         if (p > 0.01f) {
