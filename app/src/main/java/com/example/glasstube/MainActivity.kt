@@ -607,13 +607,13 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             }
             slot(l, 2, tabBar, null)
             slot(l, 3, if (searchBar.visibility == View.VISIBLE) searchBar else searchButton, null)
-            slot(l, 4, searchBack, null, refr = 0.3f)
+            slot(l, 4, searchBack, null, refr = 0.6f)
         } else {
             for (i in listOf(0, 2, 3, 4)) l.clearSlot(i)
         }
         val top = pages.lastOrNull()
         if (suggestions.visibility == View.VISIBLE) slot(l, 5, suggestions, dpf(24f))
-        else if (top != null) slot(l, 5, top.back, null, refr = 0.3f)
+        else if (top != null) slot(l, 5, top.back, null, refr = 0.6f)
         else l.clearSlot(5)
         slot(l, 6, mini, null)
         // the tabs at the top of the home page: the bar, and its capsule as a drop of glass when pressed
