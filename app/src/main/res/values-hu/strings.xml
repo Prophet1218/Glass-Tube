@@ -174,4 +174,6 @@
     <string name="icon_color_graphite">grafit</string>
     <string name="icon_changed">Ikon átállítva. A kezdőképernyőn néhány másodperc múlva frissül.</string>
     <string name="icon_failed">Az ikont nem sikerült átállítani</string>
+    <string name="dispersion">Színszóródás</string>
+    <string name="dispersion_sub">Szivárványos szélek a liquid glass felületeken</string>
 </resources>

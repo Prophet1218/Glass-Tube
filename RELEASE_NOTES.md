@@ -1,4 +1,4 @@
-## Glass Tube 0.7.0
+## Glass Tube 0.8.0
 
-- The pressed tab bar capsule is now a real drop of liquid glass: it grows a little past the bar and magnifies and bends what's under it, with a light rim and a hint of colour fringing at the edges
-- The spring motion from 0.6.1 stays the same
+- Smooth release for the tab bar capsule: as it shrinks back, the refraction relaxes and the frosted bar fades back in underneath, with no moment of sharp, unblurred picture
+- New switch in Settings → Appearance: Colour fringing. It turns the rainbow edges on or off on every liquid glass surface (tab bar, search, capsule, player buttons and menu)

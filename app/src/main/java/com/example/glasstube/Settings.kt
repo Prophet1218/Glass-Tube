@@ -91,6 +91,11 @@ class Settings(ctx: Context) {
         get() = bool("reduce_transparency", false)
         set(v) = put("reduce_transparency", v)
 
+    /** Colour fringing (dispersion) at the edges of the liquid glass. */
+    var dispersion: Boolean
+        get() = bool("dispersion", true)
+        set(v) = put("dispersion", v)
+
     // ---- history
     var saveWatchHistory: Boolean
         get() = bool("save_watch_history", true)

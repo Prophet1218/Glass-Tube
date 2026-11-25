@@ -184,7 +184,13 @@ class LensEffect(private val target: View) {
         return true
     }
 
+    private var appliedDisp: Boolean? = null
+
     fun apply() {
+        if (appliedDisp != Glass.dispersion) {
+            appliedDisp = Glass.dispersion
+            dirty = true
+        }
         if (!dirty && attached) return
         dirty = false
         attached = true
@@ -207,6 +213,7 @@ class LensEffect(private val target: View) {
         shader.setFloatUniform("convex", convex)
         shader.setFloatUniform("convexRefr", convexRefr)
         shader.setFloatUniform("lens0", lens0)
+        shader.setFloatUniform("dispScale", if (Glass.dispersion) 1f else 0f)
         val main = RenderEffect.createRuntimeShaderEffect(shader, "content")
         if (flowH > 0f && flowBlur >= 1f) {
             val mask = flowMask ?: RuntimeShader(MASK_SRC).also { flowMask = it }
@@ -272,6 +279,7 @@ half4 main(vec2 c) {
     }
     return content.eval(c);
 }
+
 """
 
         private const val SRC = """
@@ -303,6 +311,7 @@ uniform float rimWidth;
 uniform float convex;
 uniform float convexRefr;
 uniform float lens0;
+uniform float dispScale;
 
 float sdRound(vec2 p, vec2 hs, float r) {
     vec2 q = abs(p) - hs + vec2(r);
@@ -377,7 +386,7 @@ vec4 glass(vec2 c, vec4 rect, float radius, float d, float blur, float strength,
         // magnifying drop: the middle is enlarged, the rim bends the picture strongly
         off += (p * 0.12 + n * (tilt * tilt) * (bev * 0.35)) * lensAmt;
     }
-    float disp = max(dispersion, 0.08 * lensAmt);
+    float disp = max(dispersion, 0.08 * lensAmt) * dispScale;
     vec4 col = blurAt(c - off, blur);
     if (disp > 0.0 && dot(off, off) > 0.0) {
         col.r = blurAt(c - off * (1.0 + disp), blur).r;
@@ -419,15 +428,8 @@ vec4 glass(vec2 c, vec4 rect, float radius, float d, float blur, float strength,
     return col;
 }
 
-half4 main(vec2 c) {
-    // the glass surfaces come first: a capsule inside the top blur band (e.g. the tab group
-    // capsule in the tab overview) is real glass, not covered by the band
-    if (g0.z > g0.x) {
-        float d0 = sdRect(c, g0, p0.x);
-        if (d0 < 0.0) {
-            return half4(glass(c, g0, p0.x, d0, p0.y, p0.z, lens0));
-        }
-    }
+// everything except slot 0 (slot 0 fades in over this, not over the bare content)
+half4 rest(vec2 c) {
     if (g1.z > g1.x) {
         float d1 = sdRect(c, g1, p1.x);
         if (d1 < 0.0) {
@@ -488,6 +490,23 @@ half4 main(vec2 c) {
         return half4(col);
     }
     return content.eval(c);
+}
+
+half4 main(vec2 c) {
+    // the glass surfaces come first: a capsule inside the top blur band (e.g. the tab group
+    // capsule in the tab overview) is real glass, not covered by the band
+    if (g0.z > g0.x) {
+        float d0 = sdRect(c, g0, p0.x);
+        if (d0 < 0.0) {
+            half4 g = half4(glass(c, g0, p0.x, d0, p0.y, 1.0, lens0));
+            if (p0.z < 0.999) {
+                // smooth hand-over to the surface underneath (e.g. the frosted tab bar)
+                return mix(rest(c), g, half(p0.z));
+            }
+            return g;
+        }
+    }
+    return rest(c);
 }
 """
     }

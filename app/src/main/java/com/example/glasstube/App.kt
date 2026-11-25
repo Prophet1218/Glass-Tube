@@ -11,6 +11,7 @@ class App : Application() {
         super.onCreate()
         Settings(this).applyTheme()
         Glass.reduceTransparency = Settings(this).reduceTransparency
+        Glass.dispersion = Settings(this).dispersion
         val locale = Locale.getDefault()
         val country = locale.country.ifEmpty { "US" }
         // YouTube answers in the phone's language (titles, "3 days ago", etc.)

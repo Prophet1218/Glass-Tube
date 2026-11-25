@@ -23,6 +23,9 @@ object Glass {
     /** Real refracting glass: Android 13+ and not turned off in the settings. */
     var reduceTransparency = false
 
+    /** Colour fringing at the edges of every liquid glass surface. */
+    var dispersion = true
+
     fun lensSupported(): Boolean = Build.VERSION.SDK_INT >= 33 && !reduceTransparency
 
     /** A glass skin for a surface that has the lens underneath ([lens] = true) or not. */

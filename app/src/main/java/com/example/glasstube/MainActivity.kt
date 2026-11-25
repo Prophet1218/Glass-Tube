@@ -493,7 +493,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         lensOn = Glass.lensSupported() && try {
             lens = LensEffect(content).apply {
                 // same defaults as Glass Browser's "liquid" glass
-                setParams(dpf(30f), dpf(30f), 0f)
+                setParams(dpf(30f), dpf(30f), 0.06f)
                 setRim(0, 1f)
                 setConvex(0f, 0f)
             }
@@ -578,11 +578,14 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         val dockOn = dock.visibility == View.VISIBLE && dock.alpha > 0.02f
         if (dockOn) {
             // the pressed capsule is a magnifying drop of glass, through a hole in the bar's frost
-            if (pressP > 0.02f && tabIndicator.width > 0) {
-                l.setSlot0Lens(1f)
+            if (pressP > 0.01f && tabIndicator.width > 0) {
+                // fading out: the refraction relaxes and the frosted bar comes back underneath,
+                // so there is no moment of bare, unblurred picture
+                val st = (pressP * 1.4f).coerceIn(0f, 1f)
+                l.setSlot0Lens(st)
                 rectOf(tabIndicator, tmp)
-                l.setSlot(0, tmp.left, tmp.top, tmp.right, tmp.bottom, tmp.height() / 2f, 0f,
-                    (pressP * 1.6f).coerceIn(0f, 1f) * dock.alpha)
+                l.setSlot(0, tmp.left, tmp.top, tmp.right, tmp.bottom, tmp.height() / 2f, dpf(2f) * (1f - st),
+                    st * dock.alpha)
             } else {
                 l.clearSlot(0)
             }
@@ -1932,6 +1935,12 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
                 Row.Toggle(R.drawable.ic_home, getString(R.string.collapse_bar), getString(R.string.collapse_bar_sub), settings.collapseBar) {
                     settings.collapseBar = it
                     if (!it) setBarCollapsed(false)
+                },
+                Row.Toggle(R.drawable.ic_palette, getString(R.string.dispersion), getString(R.string.dispersion_sub), settings.dispersion, enabled = !settings.reduceTransparency) {
+                    settings.dispersion = it
+                    Glass.dispersion = it
+                    lens?.apply()
+                    root.invalidate()
                 },
                 Row.Toggle(R.drawable.ic_palette, getString(R.string.reduce_transparency), getString(R.string.reduce_transparency_sub), settings.reduceTransparency) {
                     settings.reduceTransparency = it
