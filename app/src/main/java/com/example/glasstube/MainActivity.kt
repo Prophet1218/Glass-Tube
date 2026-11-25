@@ -1896,6 +1896,9 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
                 Row.Toggle(R.drawable.ic_fullscreen_exit, getString(R.string.pip), getString(R.string.pip_sub), settings.pip) {
                     settings.pip = it
                 },
+                Row.Toggle(R.drawable.ic_fullscreen, getString(R.string.swipe_controls), getString(R.string.swipe_controls_sub), settings.swipeControls) {
+                    settings.swipeControls = it
+                },
                 Row.Choice(getString(R.string.download_quality), null, dlq.map { "${it}p" },
                     dlq.indexOf(settings.downloadQuality).coerceAtLeast(2)) {
                     settings.downloadQuality = dlq[it]

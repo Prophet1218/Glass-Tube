@@ -96,6 +96,11 @@ class Settings(ctx: Context) {
         get() = bool("dispersion", false)
         set(v) = put("dispersion", v)
 
+    /** Swiping up/down at the left and right edge in fullscreen sets brightness and volume. */
+    var swipeControls: Boolean
+        get() = bool("swipe_controls", true)
+        set(v) = put("swipe_controls", v)
+
     // ---- history
     var saveWatchHistory: Boolean
         get() = bool("save_watch_history", true)

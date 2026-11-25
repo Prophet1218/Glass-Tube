@@ -178,4 +178,6 @@
     <string name="dispersion">Colour fringing</string>
     <string name="dispersion_sub">Rainbow edges on the liquid glass surfaces</string>
     <string name="chapters">Chapters</string>
+    <string name="swipe_controls">Brightness and volume gestures</string>
+    <string name="swipe_controls_sub">In fullscreen, swipe up or down along the left edge for brightness and the right edge for volume</string>
 </resources>

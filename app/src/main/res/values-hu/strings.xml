@@ -177,4 +177,6 @@
     <string name="dispersion">Színszóródás</string>
     <string name="dispersion_sub">Szivárványos szélek a liquid glass felületeken</string>
     <string name="chapters">Fejezetek</string>
+    <string name="swipe_controls">Fényerő és hangerő gesztus</string>
+    <string name="swipe_controls_sub">Teljes képernyőn a bal szélén csúsztatva a fényerő, a jobb szélén a hangerő állítható</string>
 </resources>

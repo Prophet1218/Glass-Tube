@@ -1,4 +1,7 @@
-## Glass Tube 0.9.0
+## Glass Tube 1.0.0
 
-- Chapters: next to the time there is a small glass capsule with the current chapter. Tapping it opens the chapter list like on YouTube: under the video when upright, as a side panel in fullscreen. Each chapter has its picture, title and start time, the current one is highlighted, and tapping one jumps there
-- In fullscreen the seek bar now hides and comes back together with the buttons
+- The liquid glass behind the player buttons no longer slips when switching to or from fullscreen: the buttons step aside while the screen turns and come back once everything is in place
+- The chapter capsule now opens and closes the chapter list
+- The chapter list can be swiped away: downwards under the video, to the right as a side panel in fullscreen
+- In fullscreen brightness (left edge) and volume (right edge) only react in the outer strips; swiping in the middle leaves fullscreen
+- New switch in Settings → Playback to turn the brightness and volume gestures off completely

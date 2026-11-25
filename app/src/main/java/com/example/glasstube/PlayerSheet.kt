@@ -177,7 +177,7 @@ class PlayerSheet(
     private val storyboardLoading = HashSet<Int>()
     private var videoThumb: String? = null
     private var chapterIndex = -1
-    private val chaptersPanel: LinearLayout = LinearLayout(activity).apply {
+    private val chaptersPanel: DismissPanel = DismissPanel(activity).apply {
         orientation = LinearLayout.VERTICAL
         setBackgroundResource(R.drawable.panel_bg)
         isClickable = true
@@ -558,7 +558,7 @@ class PlayerSheet(
                 hideMenu()
                 true
             }
-            chaptersPanel.visibility == View.VISIBLE -> {
+            chaptersPanel.visibility == View.VISIBLE && !chaptersClosing -> {
                 closeChapters()
                 true
             }
@@ -755,8 +755,10 @@ class PlayerSheet(
                 val dy = ev.rawY - downY
                 if (drag == Drag.NONE && abs(dy) > slop && abs(dy) > abs(dx)) {
                     drag = when {
-                        fullscreen && downXLocal < videoBox.width * 0.33f -> Drag.BRIGHTNESS
-                        fullscreen && downXLocal > videoBox.width * 0.67f -> Drag.VOLUME
+                        // the outer strips (about a fifth of the width each) set brightness / volume,
+                        // the middle leaves fullscreen
+                        fullscreen && settings.swipeControls && downXLocal < videoBox.width * 0.21f -> Drag.BRIGHTNESS
+                        fullscreen && settings.swipeControls && downXLocal > videoBox.width * 0.82f -> Drag.VOLUME
                         fullscreen -> if (dy > 0) Drag.FULL_DOWN else Drag.NONE
                         startProgress < 0.01f -> if (dy > 0) Drag.DISMISS else Drag.SHEET
                         startProgress > 0.99f && dy < 0 -> Drag.FULL_UP
@@ -1984,6 +1986,9 @@ class PlayerSheet(
         chaptersPanel.addView(header)
         chaptersList.layoutManager = LinearLayoutManager(activity)
         chaptersList.adapter = chaptersAdapter
+        chaptersPanel.sideways = { chaptersSide() }
+        chaptersPanel.canScrollUp = { chaptersList.canScrollVertically(-1) }
+        chaptersPanel.onDismiss = { closeChapters() }
         chaptersList.overScrollMode = View.OVER_SCROLL_NEVER
         chaptersList.clipToPadding = false
         chaptersPanel.addView(chaptersList, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
@@ -1998,7 +2003,8 @@ class PlayerSheet(
                 showControls(autoHide = isPlaying)
                 return@setOnClickListener
             }
-            openChapters()
+            // the capsule opens and closes the list
+            if (chaptersPanel.visibility == View.VISIBLE && !chaptersClosing) closeChapters() else openChapters()
         }
     }
 
@@ -2022,12 +2028,26 @@ class PlayerSheet(
 
     private fun chaptersSide() = fullscreen && view.width > view.height
 
+    private var chaptersClosing = false
+
     private fun openChapters() {
         if (chapters.isEmpty()) return
+        val wasVisible = chaptersPanel.visibility == View.VISIBLE
+        if (wasVisible && !chaptersClosing) return
+        chaptersClosing = false
+        chaptersPanel.animate().cancel()
+        hideJob?.cancel()
         layoutChapters()
         chaptersAdapter.notifyDataSetChanged()
+        if (wasVisible) {
+            // reopened while it was sliding away: turn around from where it is
+            chaptersPanel.animate().translationX(0f).translationY(0f).setDuration(320).setInterpolator(sheetEase).start()
+            return
+        }
         chaptersPanel.visibility = View.VISIBLE
-        hideJob?.cancel()
+        // off screen until it is measured, so it doesn't flash in place for a frame
+        chaptersPanel.translationX = if (chaptersSide()) view.width.toFloat() else 0f
+        chaptersPanel.translationY = if (chaptersSide()) 0f else view.height.toFloat()
         chaptersPanel.post {
             val side = chaptersSide()
             chaptersPanel.translationX = if (side) chaptersPanel.width.toFloat() else 0f
@@ -2042,14 +2062,21 @@ class PlayerSheet(
         if (!animate) {
             chaptersPanel.animate().cancel()
             chaptersPanel.visibility = View.GONE
+            chaptersClosing = false
             return
         }
         val side = chaptersSide()
+        chaptersClosing = true
         chaptersPanel.animate()
             .translationX(if (side) chaptersPanel.width.toFloat() else 0f)
             .translationY(if (side) 0f else chaptersPanel.height.toFloat())
             .setDuration(260).setInterpolator(DecelerateInterpolator())
-            .withEndAction { chaptersPanel.visibility = View.GONE }.start()
+            .withEndAction {
+                chaptersPanel.visibility = View.GONE
+                chaptersPanel.translationX = 0f
+                chaptersPanel.translationY = 0f
+                chaptersClosing = false
+            }.start()
         if (isPlaying && controlsShown) scheduleHide()
     }
 
@@ -2236,8 +2263,23 @@ class PlayerSheet(
         return size.width > 0 && size.height > size.width
     }
 
+    /** While the screen turns the buttons go away, and come back once everything has settled,
+     *  so the glass behind them can't lag behind the moving buttons. */
+    private fun hideControlsForSwitch() {
+        val wasShown = controlsShown
+        hideControls(fast = true)
+        controls.animate().cancel()
+        controls.alpha = 0f
+        controls.visibility = View.INVISIBLE
+        lens?.clear()
+        view.postDelayed({
+            if (isOpen && progress >= 0.999f && !pip && wasShown) showControls(autoHide = isPlaying)
+        }, 520)
+    }
+
     private fun enterFullscreen(rotate: Boolean) {
         if (fullscreen) return
+        hideControlsForSwitch()
         fullscreen = true
         applyControlsLayout()
         WindowCompat.getInsetsController(activity.window, activity.window.decorView).apply {
@@ -2257,6 +2299,7 @@ class PlayerSheet(
 
     private fun exitFullscreen() {
         if (!fullscreen) return
+        hideControlsForSwitch()
         fullscreen = false
         val byRotation = fullscreenByRotation
         fullscreenByRotation = false
