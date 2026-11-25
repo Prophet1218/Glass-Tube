@@ -123,7 +123,7 @@ class HoleDrawable(private val inner: Drawable) : Drawable() {
     override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
 }
 
-private const val TOP_TABS_SPACE = 54
+private const val TOP_TABS_SPACE = 120
 
 class MainActivity : AppCompatActivity(), PlayerSheet.Host {
 
@@ -204,11 +204,15 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     // home
     private var homeChip = 0
     private lateinit var topTabs: TopTabs
-    /** Home page tab at the top: 0 home, 1 subscriptions, 2 music, 3 live, 4 more. */
+    /** "Glass Tube" + the tabs: attached to the top of the home page, scrolls away and comes back. */
+    private lateinit var homeHeaderView: LinearLayout
+    private var headerShift = 0f
+    private var headerSnap: ValueAnimator? = null
+    /** Home page tab at the top: 0 home, 1 subscriptions, 2 live. */
     private var homeTop = 0
-    private val homeRowsCache = arrayOfNulls<List<Row>>(5)
-    private val homeScrollCache = arrayOfNulls<android.os.Parcelable>(5)
-    private val homeContCache = arrayOfNulls<String>(5)
+    private val homeRowsCache = arrayOfNulls<List<Row>>(3)
+    private val homeScrollCache = arrayOfNulls<android.os.Parcelable>(3)
+    private val homeContCache = arrayOfNulls<String>(3)
     private var kioskEx: org.schabi.newpipe.extractor.kiosk.KioskExtractor<*>? = null
     private var kioskNext: Page? = null
     private var homeContinuation: String? = null
@@ -613,7 +617,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         else l.clearSlot(5)
         slot(l, 6, mini, null)
         // the tabs at the top of the home page: the bar, and its capsule as a drop of glass when pressed
-        if (topTabs.visibility == View.VISIBLE && topTabs.alpha > 0.02f && topTabs.width > 0) {
+        if (homeHeaderView.visibility == View.VISIBLE && topTabs.width > 0 && headerShift < homeHeaderView.height - dp(2)) {
             slot(l, 7, topTabs, null)
             val tp = topTabs.pressAmount
             if (tp > 0.01f) {
@@ -621,7 +625,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
                 rectOf(topTabs, tmp)
                 val r = topTabs.capRect
                 l.setSlot(1, tmp.left + r.left, tmp.top + r.top, tmp.left + r.right, tmp.top + r.bottom, r.height() / 2f,
-                    dpf(2f) * (1f - st), st * topTabs.alpha, lens = st)
+                    dpf(2f) * (1f - st), st, lens = st)
             } else {
                 l.clearSlot(1)
             }
@@ -641,6 +645,10 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
                 } else {
                     l.setTop(0f, 0f, 0f, 0, 0f, false)
                 }
+            }
+            list === homeList && homeList.computeVerticalScrollOffset() > 0 -> {
+                val visible = (homeHeaderView.height - headerShift).coerceAtLeast(0f)
+                l.setTop(statusTop + visible, dpf(18f), dpf(14f), tint, 0f, true)
             }
             list != null && list !== shortsList && statusTop > 0 && list.computeVerticalScrollOffset() > 0 ->
                 l.setTop(statusTop.toFloat(), dpf(18f), dpf(10f), tint, 0f, true)
@@ -1039,7 +1047,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     private fun showContent() {
         val pageOn = pages.isNotEmpty()
         homeList.visibility = if (!pageOn && !searchActive && tab == Tab.HOME) View.VISIBLE else View.GONE
-        if (::topTabs.isInitialized) topTabs.visibility = homeList.visibility
+        if (::homeHeaderView.isInitialized) homeHeaderView.visibility = homeList.visibility
         youList.visibility = if (!pageOn && !searchActive && tab == Tab.YOU) View.VISIBLE else View.GONE
         shortsList.visibility = if (!searchActive && tab == Tab.SHORTS) View.VISIBLE else View.GONE
         searchList.visibility = if (!pageOn && searchActive) View.VISIBLE else View.GONE
@@ -1100,12 +1108,13 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         val listBottom = navBottom + dp(56) + dp(36) + if (miniShown) dp(64) else 0
         for (rv in listOf(youList, searchList)) rv.setPadding(0, statusTop, 0, listBottom)
         // the home list starts under the floating tabs
-        homeList.setPadding(0, statusTop + dp(TOP_TABS_SPACE), 0, listBottom)
-        if (::topTabs.isInitialized) {
-            val lp = topTabs.layoutParams as FrameLayout.LayoutParams
-            if (lp.topMargin != statusTop + dp(8)) {
-                lp.topMargin = statusTop + dp(8)
-                topTabs.layoutParams = lp
+        val headerH = if (::homeHeaderView.isInitialized && homeHeaderView.height > 0) homeHeaderView.height else dp(TOP_TABS_SPACE)
+        homeList.setPadding(0, statusTop + headerH, 0, listBottom)
+        if (::homeHeaderView.isInitialized) {
+            val lp = homeHeaderView.layoutParams as FrameLayout.LayoutParams
+            if (lp.topMargin != statusTop) {
+                lp.topMargin = statusTop
+                homeHeaderView.layoutParams = lp
             }
         }
     }
@@ -1121,10 +1130,15 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         homeList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
                 collapseOnScroll(rv, dy)
+                onHomeScrolled(dy)
                 val lm = rv.layoutManager as LinearLayoutManager
                 if (lm.findLastVisibleItemPosition() >= homeAdapter.itemCount - 4 &&
                     homeAdapter.items.lastOrNull() == Row.Loading
                 ) loadMoreHome()
+            }
+
+            override fun onScrollStateChanged(rv: RecyclerView, newState: Int) {
+                if (newState == RecyclerView.SCROLL_STATE_IDLE) settleHeader()
             }
         })
         youList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
@@ -1163,19 +1177,9 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         kioskEx = null
         kioskNext = null
         homeRowsCache[homeTop] = null
-        when (homeTop) {
-            2 -> {
-                loadKiosk(listOf("trending_music"), null)
-                return
-            }
-            3 -> {
-                loadKiosk(listOf("live"), "live")
-                return
-            }
-            4 -> {
-                homeAdapter.submit(homeHeader() + moreRows())
-                return
-            }
+        if (homeTop == 2) {
+            loadKiosk(listOf("live"), "live")
+            return
         }
         homeChip = if (homeTop == 1) 1 else 0
         homeAdapter.submit(homeHeader() + Row.Loading)
@@ -1220,20 +1224,81 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     // ---- tabs at the top of the home page
 
     private fun setupTopTabs() {
-        val labels = listOf(R.string.top_home, R.string.top_subs, R.string.top_music, R.string.top_live, R.string.top_more).map { getString(it) }
+        val labels = listOf(R.string.top_home, R.string.top_subs, R.string.top_live).map { getString(it) }
         topTabs = TopTabs(this, labels, lensOn)
         topTabs.onFrame = { root.invalidate() }
         topTabs.onSelect = { switchHomeTop(it) }
         topTabs.onReselect = {
             if (homeList.computeVerticalScrollOffset() > 0) homeList.smoothScrollToPosition(0) else loadHome()
         }
-        val lp = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(38), Gravity.TOP)
-        lp.marginStart = dp(16)
-        lp.marginEnd = dp(16)
-        lp.topMargin = statusTop + dp(8)
+        homeHeaderView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            clipChildren = false
+            clipToPadding = false
+        }
+        val title = TextView(this).apply {
+            text = getString(R.string.app_name)
+            setTextColor(Glass.textColor(this@MainActivity))
+            textSize = 32f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(dp(20), dp(14), dp(20), dp(8))
+        }
+        homeHeaderView.addView(title)
+        homeHeaderView.addView(topTabs, LinearLayout.LayoutParams(dp(258), dp(38)).apply {
+            marginStart = dp(16)
+            bottomMargin = dp(10)
+        })
+        val lp = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP)
+        lp.topMargin = statusTop
         // above the content (so the glass refracts the list), below the dock and the player
-        root.addView(topTabs, root.indexOfChild(content) + 1, lp)
-        topTabs.visibility = homeList.visibility
+        root.addView(homeHeaderView, root.indexOfChild(content) + 1, lp)
+        homeHeaderView.visibility = homeList.visibility
+        homeHeaderView.addOnLayoutChangeListener { _, _, t, _, b, _, ot, _, ob ->
+            if (b - t != ob - ot) root.post { applyListPadding() }
+        }
+    }
+
+    /**
+     * Like YouTube: the header scrolls away with the list, comes back as soon as you scroll up a
+     * little, and settles fully in or out when the scroll stops.
+     */
+    private fun onHomeScrolled(dy: Int) {
+        if (!::homeHeaderView.isInitialized) return
+        headerSnap?.cancel()
+        val offset = homeList.computeVerticalScrollOffset().toFloat()
+        val max = homeHeaderView.height.toFloat() + statusTop
+        headerShift = (headerShift + dy).coerceIn(0f, minOf(max, offset))
+        applyHeaderShift()
+    }
+
+    private fun settleHeader() {
+        val max = homeHeaderView.height.toFloat() + statusTop
+        val offset = homeList.computeVerticalScrollOffset().toFloat()
+        if (headerShift <= 0f || headerShift >= max) return
+        // near the top it simply follows the list
+        if (offset <= max && headerShift >= offset - 1f) return
+        val target = if (headerShift > homeHeaderView.height / 2f) max else 0f
+        headerSnap?.cancel()
+        headerSnap = ValueAnimator.ofFloat(headerShift, target).apply {
+            duration = 220
+            interpolator = DecelerateInterpolator(1.6f)
+            addUpdateListener {
+                headerShift = it.animatedValue as Float
+                applyHeaderShift()
+            }
+            start()
+        }
+    }
+
+    private fun showHeader() {
+        headerSnap?.cancel()
+        headerShift = 0f
+        if (::homeHeaderView.isInitialized) applyHeaderShift()
+    }
+
+    private fun applyHeaderShift() {
+        homeHeaderView.translationY = -headerShift
+        root.invalidate()
     }
 
     /** Switching top tabs: the same slide-and-fade as between the bottom tabs. */
@@ -1248,13 +1313,14 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         homeJob?.cancel()
         homeMoreJob?.cancel()
         homeTop = i
+        showHeader()
         val shift = dpf(36f) * dir
         homeList.animate().cancel()
         homeList.animate().alpha(0f).translationX(-shift).setDuration(110)
             .setInterpolator(DecelerateInterpolator())
             .withEndAction {
                 val cached = homeRowsCache[i]
-                if (cached != null && i != 2 && i != 3) {
+                if (cached != null && i != 2) {
                     homeContinuation = homeContCache[i]
                     homeAdapter.submit(cached)
                     homeScrollCache[i]?.let { homeList.layoutManager?.onRestoreInstanceState(it) }
@@ -1268,14 +1334,6 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
             }.start()
         setBarCollapsed(false)
     }
-
-    private fun moreRows(): List<Row> = listOf(
-        Row.Menu(R.drawable.ic_trending, getString(R.string.more_trending)) { openKioskPage(getString(R.string.more_trending), "Trending") },
-        Row.Menu(R.drawable.ic_music, getString(R.string.more_music)) { openKioskPage(getString(R.string.more_music), "trending_music") },
-        Row.Menu(R.drawable.ic_gaming, getString(R.string.more_gaming)) { openKioskPage(getString(R.string.more_gaming), "trending_gaming") },
-        Row.Menu(R.drawable.ic_movie, getString(R.string.more_movies)) { openKioskPage(getString(R.string.more_movies), "trending_movies_and_shows") },
-        Row.Menu(R.drawable.ic_podcast, getString(R.string.more_podcasts)) { openKioskPage(getString(R.string.more_podcasts), "trending_podcasts_episodes") }
-    )
 
     private fun kioskVideos(items: List<*>): List<Video> =
         items.filterIsInstance<StreamInfoItem>().mapNotNull { Video.from(this, it) }
@@ -1354,54 +1412,6 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         }
     }
 
-    private fun openKioskPage(title: String, id: String) {
-        val p = PageView(title)
-        pushPage(p)
-        p.adapter.submit(listOf(Row.Loading))
-        var ex: org.schabi.newpipe.extractor.kiosk.KioskExtractor<*>? = null
-        var next: Page? = null
-        fun more() {
-            val e = ex ?: return
-            val n = next ?: return
-            if (!Page.isValid(n) || p.job?.isActive == true) return
-            p.job = lifecycleScope.launch {
-                try {
-                    val page = withContext(Dispatchers.IO) { e.getPage(n) }
-                    next = page.nextPage
-                    val rows = ArrayList<Row>()
-                    kioskVideos(page.items).forEach { rows.add(Row.VideoRow(it)) }
-                    if (Page.isValid(next)) rows.add(Row.Loading)
-                    p.adapter.append(rows)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    p.adapter.append(listOf(Row.Message(Errors.text(this@MainActivity, e))))
-                }
-            }
-        }
-        p.moreFn = { more() }
-        p.job = lifecycleScope.launch {
-            try {
-                val (e, first) = withContext(Dispatchers.IO) {
-                    val e = yt.kioskList.getExtractorById(id, null)
-                    e.fetchPage()
-                    e to e.initialPage
-                }
-                ex = e
-                next = first.nextPage
-                val rows = ArrayList<Row>()
-                kioskVideos(first.items).forEach { rows.add(Row.VideoRow(it)) }
-                if (rows.isEmpty()) rows.add(Row.Message(getString(R.string.nothing_here)))
-                else if (Page.isValid(next)) rows.add(Row.Loading)
-                p.adapter.submit(rows)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                p.adapter.submit(listOf(Row.Message(Errors.text(this@MainActivity, e))))
-            }
-        }
-    }
-
     /** Newest videos of the channels subscribed to on the phone. */
     private suspend fun localSubscriptionFeed(): List<Video> = withContext(Dispatchers.IO) {
         val subs = Subscriptions(this@MainActivity).all().take(15)
@@ -1464,7 +1474,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     }
 
     private fun loadMoreHome() {
-        if (homeTop == 2 || homeTop == 3) {
+        if (homeTop == 2) {
             loadMoreKiosk()
             return
         }
