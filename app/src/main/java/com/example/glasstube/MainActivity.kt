@@ -902,13 +902,10 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
         tabViews.forEachIndexed { i, v ->
             val tc = tw * i + tw / 2f
             val near = (1f - abs(tc - center) / tw).coerceIn(0f, 1f)
-            // under the pressed glass the icon is magnified around the capsule's centre, as if
-            // seen through the drop (the capsule runs in front of the icons)
-            val mag = 0.2f * p.coerceIn(0f, 1.2f) * near
-            val s = 1f + mag
+            val s = 1f + 0.16f * p.coerceIn(0f, 1.2f) * near
             v.scaleX = s
             v.scaleY = s
-            v.translationX = (tc - center) * mag
+            v.translationX = 0f
             // glow follows the capsule (at rest that is exactly the selected tab)
             val glow = near
             val col = ColorUtils.blendARGB(dim, glowColor, glow)

@@ -209,11 +209,10 @@ class TopTabs(context: Context, labels: List<String>, private val lensOn: Boolea
         texts.forEachIndexed { i, t ->
             val near = if (tw > 0f) (1f - abs(center(i) - capX) / tw).coerceIn(0f, 1f) else if (i == selected) 1f else 0f
             t.setTextColor(ColorUtils.blendARGB(dim, text, near))
-            // magnified through the pressed glass, which runs in front of the labels
-            val mag = 0.18f * p.coerceIn(0f, 1.2f) * near
-            t.scaleX = 1f + mag
-            t.scaleY = 1f + mag
-            t.translationX = (center(i) - capX) * mag
+            val s = 1f + 0.1f * p.coerceIn(0f, 1.2f) * near
+            t.scaleX = s
+            t.scaleY = s
+            t.translationX = 0f
             // under the pressed glass the label is shown by its copy inside the refracted picture
             val g = if (lensOn) near * (p * 1.6f).coerceIn(0f, 1f) else 0f
             ghost[i] = g
