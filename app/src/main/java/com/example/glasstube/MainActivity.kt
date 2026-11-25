@@ -931,7 +931,9 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
                 halo.setColorFilter(glowColor)
                 halo.alpha = glow * (if (night) 0.95f else 0.45f)
             } else {
-                halo.alpha = glow * 0.8f
+                // the profile picture's glow is a white disc: while the capsule is pressed it would
+                // shine through the glass as a white blob, so it fades away during the press
+                halo.alpha = glow * 0.8f * (1f - (p * 2f).coerceIn(0f, 1f))
             }
             halo.scaleX = 1.12f
             halo.scaleY = 1.12f

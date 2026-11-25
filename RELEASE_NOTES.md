@@ -1,3 +1,3 @@
-## Glass Tube 1.3.10
+## Glass Tube 1.3.11
 
-- The soft glow around the tab icons is no longer cut off with a hard edge where the pressed capsule covers it
+- Profile picture tab: its white glow no longer covers the picture while the capsule shrinks back; it fades out during the press and returns when the capsule has settled
