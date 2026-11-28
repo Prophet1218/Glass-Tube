@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Glass Tube</string>
+    <string name="app_name">Lucent</string>
     <string name="search_hint">Search YouTube</string>
     <string name="home_subtitle">Search for something with the bar below</string>
     <string name="recent_searches">Recent searches</string>
@@ -187,7 +187,7 @@
     <string name="refraction_sub">How strongly the liquid glass bends what is behind it</string>
     <string name="playlist">Playlist</string>
     <string name="links_title">YouTube links</string>
-    <string name="links_on">Open in Glass Tube</string>
+    <string name="links_on">Open in Lucent</string>
     <string name="links_off">Open in the browser — tap to fix</string>
     <string name="links_message">Android opens YouTube links in the browser unless you allow this app to open them. In the next screen tap \"Add link\" (or \"Supported web addresses\"), and turn on every YouTube address.</string>
     <string name="links_open_settings">Open link settings</string>

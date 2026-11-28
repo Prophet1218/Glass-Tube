@@ -209,7 +209,7 @@ class MainActivity : AppCompatActivity(), PlayerSheet.Host {
     private val tabGhost = FloatArray(3)
     private val capWin = RectF()
     private val capLocTmp = IntArray(2)
-    /** "Glass Tube" + the tabs: attached to the top of the home page, scrolls away and comes back. */
+    /** The app name + the tabs: attached to the top of the home page, scrolls away and comes back. */
     private lateinit var homeHeaderView: LinearLayout
     private var headerShift = 0f
     private var headerSnap: ValueAnimator? = null

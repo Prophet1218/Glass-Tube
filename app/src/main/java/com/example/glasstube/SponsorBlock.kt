@@ -43,7 +43,7 @@ object SponsorBlock {
         val url = "https://sponsor.ajay.app/api/skipSegments?videoID=$videoId&categories=$cats"
         return try {
             NetDownloader.instance.client.newCall(
-                Request.Builder().url(url).header("User-Agent", "GlassTube").build()
+                Request.Builder().url(url).header("User-Agent", "Lucent").build()
             ).execute().use { r ->
                 if (!r.isSuccessful) return emptyList()
                 val arr = JSONArray(r.body?.string().orEmpty())

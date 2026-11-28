@@ -1,6 +1,6 @@
-# Glass Tube 1.5.0
+# Lucent 1.6.0
 
-A personal Android YouTube client with the same liquid glass look as Glass Browser. It uses [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor), so it needs no Google account or API key and shows no ads.
+Lucent (formerly Glass Tube) is a personal Android YouTube client with the same liquid glass look as Glass Browser. It uses [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor), so it needs no Google account or API key and shows no ads.
 
 Download the latest APK from **Releases**. GitHub Actions builds a new APK after every push. The release notes list the features.
 

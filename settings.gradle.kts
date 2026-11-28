@@ -16,5 +16,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "GlassTube"
+rootProject.name = "Lucent"
 include(":app")

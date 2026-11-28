@@ -32,7 +32,7 @@ jobs:
         run: echo "name=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
 
       - name: Rename
-        run: cp app/build/outputs/apk/release/app-release.apk GlassTube-${{ steps.ver.outputs.name }}.apk
+        run: cp app/build/outputs/apk/release/app-release.apk Lucent-${{ steps.ver.outputs.name }}.apk
 
       - name: Delete older releases (only the latest stays)
         env:
@@ -48,8 +48,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.name }}
-          name: Glass Tube ${{ steps.ver.outputs.name }}
-          files: GlassTube-${{ steps.ver.outputs.name }}.apk
+          name: Lucent ${{ steps.ver.outputs.name }}
+          files: Lucent-${{ steps.ver.outputs.name }}.apk
           body_path: RELEASE_NOTES.md
           overwrite_files: true
           make_latest: true
