@@ -1,5 +1,5 @@
-## Glass Tube 1.4.0
+## Glass Tube 1.5.0
 
-- Every YouTube link can open in Glass Tube: videos, Shorts, live, channels, playlists and searches, from youtube.com, m.youtube.com, music.youtube.com, youtu.be and youtube-nocookie.com
-- Channel and playlist links open their page in the app, search links run the search
-- New in Settings: YouTube links. It shows whether Android lets the app open them and takes you to the system setting where you can turn it on (Android only allows this after you add the addresses there once). The app also asks about it once on start
+- Subtitles work: the player now decodes YouTube's WebVTT subtitles, shown white on a soft dark box
+- New CC button: next to the settings gear in one liquid glass capsule at the top right. It turns subtitles on in your last used language (otherwise the phone's language, then English) or off again; the language can still be picked in the settings menu
+- In fullscreen the video's title and channel are shown at the top left, like on YouTube

@@ -57,6 +57,11 @@ class Settings(ctx: Context) {
         get() = prefs.getString("subtitle_lang", "") ?: ""
         set(v) = prefs.edit().putString("subtitle_lang", v).apply()
 
+    /** The last subtitle language that was on (for the CC button). */
+    var lastSubtitleLang: String
+        get() = prefs.getString("last_subtitle_lang", "") ?: ""
+        set(v) = prefs.edit().putString("last_subtitle_lang", v).apply()
+
     /** Resolution for downloads (short side). */
     var downloadQuality: Int
         get() = int("download_quality", 720)

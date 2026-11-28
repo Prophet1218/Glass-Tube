@@ -117,6 +117,10 @@ class PlayerSheet(
     private val timeRow: View = view.findViewById(R.id.timeRow)
     private val timeNow: TextView = view.findViewById(R.id.timeNow)
     private val timeTotal: TextView = view.findViewById(R.id.timeTotal)
+    private val fsTitleBox: View = view.findViewById(R.id.fsTitleBox)
+    private val fsTitle: TextView = view.findViewById(R.id.fsTitle)
+    private val fsChannel: TextView = view.findViewById(R.id.fsChannel)
+    private val icCC: ImageView = view.findViewById(R.id.icCC)
     private val chapterChip: TextView = view.findViewById(R.id.chapterChip)
     private val seek: GlassSeekBar = view.findViewById(R.id.seek)
     private val icPlay: PlayPauseView = view.findViewById(R.id.icPlay)
@@ -280,6 +284,10 @@ class PlayerSheet(
         activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     private val playerListener = object : Player.Listener {
+        override fun onTracksChanged(tracks: Tracks) {
+            updateCC()
+        }
+
         override fun onPlayerError(error: PlaybackException) {
             buffering = false
             updateLoading()
@@ -339,7 +347,7 @@ class PlayerSheet(
                 view.visibility = View.VISIBLE
                 ensurePlayerView()
                 showOfflineDetails(d)
-                host.onNowPlaying(d.title, d.channel)
+                nowPlaying(d.title, d.channel)
                 view.post { setProgress(0f) }
             } else if (currentUrl == null && svc.currentInfo != null) {
                 // the app was reopened while a video kept playing: show it in the mini player
@@ -349,7 +357,7 @@ class PlayerSheet(
                 view.visibility = View.VISIBLE
                 ensurePlayerView()
                 showDetails(info, record = false)
-                host.onNowPlaying(info.name, info.uploaderName)
+                nowPlaying(info.name, info.uploaderName)
                 view.post { setProgress(0f) }
             }
         }
@@ -460,7 +468,15 @@ class PlayerSheet(
             }
         } else null
         val lensOn = lens != null
-        for (b in buttons) b.background = Glass.overVideo(activity, null, lensOn)
+        for (b in buttons) b.background = Glass.overVideo(activity, if (b.id == R.id.btnSettings) dpf(20f) else null, lensOn)
+        // readable subtitles: white on a soft dark box, a little bigger than the default
+        pv.subtitleView?.apply {
+            setStyle(androidx.media3.ui.CaptionStyleCompat(Color.WHITE, Color.argb(150, 0, 0, 0), Color.TRANSPARENT,
+                androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_NONE, Color.TRANSPARENT, null))
+            setFractionalTextSize(androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 1.1f)
+            setBottomPaddingFraction(0.1f)
+            setApplyEmbeddedStyles(false)
+        }
     }
 
     private val tmp = RectF()
@@ -569,7 +585,7 @@ class PlayerSheet(
         progress = 0f
         host.onMiniOffset(0f, 1f)
         host.onSheetProgress(0f)
-        host.onNowPlaying(null, null)
+        nowPlaying(null, null)
         host.onSheetClosed()
     }
 
@@ -997,11 +1013,64 @@ class PlayerSheet(
     /** The mini player's own touches (outside the video): tap, swipe up or swipe away. */
     fun forwardMiniTouch(ev: MotionEvent): Boolean = onVideoTouch(ev)
 
+    private fun nowPlaying(title: String?, channel: String?) {
+        host.onNowPlaying(title, channel)
+        fsTitle.text = title ?: ""
+        fsChannel.text = channel ?: ""
+    }
+
+    // ================================================================ captions (CC button)
+
+    private fun trackLang(g: Tracks.Group): String = g.getTrackFormat(0).language ?: ""
+    private fun trackAuto(g: Tracks.Group): Boolean = g.getTrackFormat(0).label?.contains("(auto)") == true
+
+    private fun selectTextTrack(g: Tracks.Group) {
+        val p = service?.player ?: return
+        settings.subtitleLang = trackLang(g)
+        settings.lastSubtitleLang = trackLang(g)
+        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+            .setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, 0))
+            .build()
+    }
+
+    /** CC: subtitles off, or on in the last used language (else the phone's, else English). */
+    private fun toggleCaptions() {
+        val tracks = textTracks()
+        if (tracks.isEmpty()) {
+            Toast.makeText(activity, R.string.no_subtitles, Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (tracks.any { it.third }) {
+            settings.subtitleLang = ""
+            applySubtitlePrefs()
+            Toast.makeText(activity, R.string.subtitles_off_toast, Toast.LENGTH_SHORT).show()
+        } else {
+            val wanted = listOf(settings.lastSubtitleLang, java.util.Locale.getDefault().language, "en").filter { it.isNotEmpty() }
+            val groups = tracks.map { it.second }
+            val pick = wanted.firstNotNullOfOrNull { w ->
+                groups.firstOrNull { trackLang(it).startsWith(w) && !trackAuto(it) }
+                    ?: groups.firstOrNull { trackLang(it).startsWith(w) }
+            } ?: groups.firstOrNull { !trackAuto(it) } ?: groups.first()
+            selectTextTrack(pick)
+            val f = pick.getTrackFormat(0)
+            Toast.makeText(activity, activity.getString(R.string.subtitles_on, f.label ?: f.language ?: "?"), Toast.LENGTH_SHORT).show()
+        }
+        icCC.post { updateCC() }
+    }
+
+    private fun updateCC() {
+        val on = textTracks().any { it.third }
+        icCC.alpha = if (on) 1f else 0.55f
+        icCC.scaleX = if (on) 1.06f else 1f
+        icCC.scaleY = icCC.scaleX
+    }
+
     // ================================================================ controls
 
     @SuppressLint("ClickableViewAccessibility")
     private fun setupControls() {
-        for (id in listOf(R.id.icDown, R.id.icSettings, R.id.icBack10, R.id.icFwd10, R.id.icFull)) {
+        for (id in listOf(R.id.icDown, R.id.icSettings, R.id.icCC, R.id.icBack10, R.id.icFwd10, R.id.icFull)) {
             view.findViewById<ImageView>(id).setColorFilter(Color.WHITE)
         }
         icPlay.setColor(Color.WHITE)
@@ -1009,7 +1078,8 @@ class PlayerSheet(
         press(view.findViewById(R.id.btnBack10)) { seekBy(-settings.seekStep * 1000L) }
         press(view.findViewById(R.id.btnFwd10)) { seekBy(settings.seekStep * 1000L) }
         press(view.findViewById(R.id.btnFull)) { if (fullscreen) exitFullscreen() else enterFullscreen(rotate = true) }
-        press(view.findViewById(R.id.btnSettings)) { showMenu() }
+        press(view.findViewById(R.id.btnGear)) { showMenu() }
+        press(view.findViewById(R.id.btnCC)) { toggleCaptions() }
         press(view.findViewById(R.id.btnDown)) { collapse() }
 
         seek.onScrubStart = { showControls(autoHide = false) }
@@ -1244,6 +1314,7 @@ class PlayerSheet(
         fl.marginEnd = if (fullscreen) dp(24) else dp(10)
         full.layoutParams = fl
         icFull.setImageResource(if (fullscreen) R.drawable.ic_fullscreen_exit else R.drawable.ic_fullscreen)
+        fsTitleBox.visibility = if (fullscreen) View.VISIBLE else View.GONE
     }
 
     // ================================================================ settings menu (liquid glass over the video)
@@ -1446,16 +1517,14 @@ class PlayerSheet(
         menu.addView(menuRow(0, activity.getString(R.string.off), null, check = tracks.none { it.third }) {
             settings.subtitleLang = ""
             applySubtitlePrefs()
+            updateCC()
             hideMenu()
         })
         for ((label, group, selected) in tracks) {
             menu.addView(menuRow(0, label, null, check = selected) {
-                val p = service?.player ?: return@menuRow
-                settings.subtitleLang = group.getTrackFormat(0).language ?: ""
-                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                    .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, 0))
-                    .build()
+                if (service?.player == null) return@menuRow
+                selectTextTrack(group)
+                updateCC()
                 hideMenu()
             })
         }
@@ -1505,7 +1574,7 @@ class PlayerSheet(
         val info = svc?.currentInfo
         if (svc != null && svc.currentUrl == url && info != null) {
             showDetails(info, record = false)
-            host.onNowPlaying(info.name, info.uploaderName)
+            nowPlaying(info.name, info.uploaderName)
             return
         }
         loadingInfo = true
@@ -1517,7 +1586,7 @@ class PlayerSheet(
                 val result = withContext(Dispatchers.IO) { StreamInfo.getInfo(yt, url) }
                 if (currentUrl != url) return@launch
                 showDetails(result, record = true)
-                host.onNowPlaying(result.name, result.uploaderName)
+                nowPlaying(result.name, result.uploaderName)
                 val id = Video.idOf(result.url) ?: currentId
                 val start = if (settings.resume && id != null) store.position(id) else 0L
                 startPlayback(result, start)
@@ -1774,7 +1843,7 @@ class PlayerSheet(
         frameset = null
         chapters = emptyList()
         showOfflineDetails(d)
-        host.onNowPlaying(d.title, d.channel)
+        nowPlaying(d.title, d.channel)
         val start = if (settings.resume) store.position(d.id) else 0L
         try {
             svc.playLocal(d, start)

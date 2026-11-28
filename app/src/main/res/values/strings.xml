@@ -193,4 +193,7 @@
     <string name="links_open_settings">Open link settings</string>
     <string name="links_later">Later</string>
     <string name="links_hint">Settings → Open by default → add the YouTube addresses</string>
+    <string name="no_subtitles">This video has no subtitles</string>
+    <string name="subtitles_on">Subtitles: %1$s</string>
+    <string name="subtitles_off_toast">Subtitles off</string>
 </resources>

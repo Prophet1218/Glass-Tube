@@ -62,22 +62,84 @@
                     android:src="@drawable/ic_chevron_down" />
             </FrameLayout>
 
-            <FrameLayout
+            <!-- video title in fullscreen, top left like on YouTube -->
+            <LinearLayout
+                android:id="@+id/fsTitleBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|start"
+                android:layout_marginStart="64dp"
+                android:layout_marginTop="9dp"
+                android:layout_marginEnd="132dp"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/fsTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:shadowColor="#AA000000"
+                    android:shadowRadius="6"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="17sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/fsChannel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:shadowColor="#AA000000"
+                    android:shadowRadius="6"
+                    android:textColor="#CCFFFFFF"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <!-- captions + settings in one liquid glass capsule -->
+            <LinearLayout
                 android:id="@+id/btnSettings"
-                android:layout_width="40dp"
+                android:layout_width="wrap_content"
                 android:layout_height="40dp"
                 android:layout_gravity="top|end"
                 android:layout_margin="10dp"
-                android:contentDescription="@string/settings">
+                android:clipChildren="false"
+                android:orientation="horizontal"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp">
 
-                <ImageView
-                    android:id="@+id/icSettings"
-                    android:layout_width="21dp"
-                    android:layout_height="21dp"
-                    android:layout_gravity="center"
-                    android:importantForAccessibility="no"
-                    android:src="@drawable/ic_settings" />
-            </FrameLayout>
+                <FrameLayout
+                    android:id="@+id/btnCC"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:contentDescription="@string/subtitles">
+
+                    <ImageView
+                        android:id="@+id/icCC"
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:layout_gravity="center"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_subtitles" />
+                </FrameLayout>
+
+                <FrameLayout
+                    android:id="@+id/btnGear"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:contentDescription="@string/settings">
+
+                    <ImageView
+                        android:id="@+id/icSettings"
+                        android:layout_width="21dp"
+                        android:layout_height="21dp"
+                        android:layout_gravity="center"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_settings" />
+                </FrameLayout>
+            </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/centerRow"

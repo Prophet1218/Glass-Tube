@@ -192,4 +192,7 @@
     <string name="links_open_settings">Linkbeállítások megnyitása</string>
     <string name="links_later">Később</string>
     <string name="links_hint">Beállítások → Megnyitás alapértelmezés szerint → YouTube címek hozzáadása</string>
+    <string name="no_subtitles">Ehhez a videóhoz nincs felirat</string>
+    <string name="subtitles_on">Felirat: %1$s</string>
+    <string name="subtitles_off_toast">Felirat kikapcsolva</string>
 </resources>
