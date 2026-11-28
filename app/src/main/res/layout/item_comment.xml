@@ -52,5 +52,37 @@
             android:gravity="center_vertical"
             android:textColor="@color/text_muted"
             android:textSize="12sp" />
+
+        <!-- "12 replies" / "Hide replies": opens the answers under the comment -->
+        <TextView
+            android:id="@+id/repliesBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="-8dp"
+            android:layout_marginTop="2dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:paddingStart="8dp"
+            android:paddingTop="6dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="6dp"
+            android:textColor="@color/text"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/moreReplies"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="-8dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:paddingStart="8dp"
+            android:paddingTop="6dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="6dp"
+            android:textColor="@color/text"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
     </LinearLayout>
 </LinearLayout>

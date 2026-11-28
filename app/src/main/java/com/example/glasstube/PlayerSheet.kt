@@ -2192,9 +2192,94 @@ class PlayerSheet(
 
     // ================================================================ comments
 
+    /** Answers under a comment: open or not, loaded so far, and the next page. */
+    private class ReplyState(var open: Boolean = false, var loading: Boolean = false,
+                             val items: ArrayList<CommentsInfoItem> = ArrayList(), var next: Page? = null, var job: Job? = null)
+
+    private val topComments = ArrayList<CommentsInfoItem>()
+    private val replyStates = HashMap<String, ReplyState>()
+
+    private fun commentId(c: CommentsInfoItem): String = c.commentId?.takeIf { it.isNotEmpty() } ?: (c.uploaderName.orEmpty() + c.textualUploadDate)
+
+    /** The comment list: each comment, its answers when opened, then "loading more" at the end. */
+    private fun commentRows(): List<Row> {
+        val rows = ArrayList<Row>()
+        for (c in topComments) {
+            val id = commentId(c)
+            val st = replyStates[id]
+            rows.add(commentRow(c).copy(
+                id = id,
+                repliesOpen = st?.open == true,
+                repliesLoading = st?.loading == true,
+                onReplies = if (c.replyCount > 0 && Page.isValid(c.replies)) ({ toggleReplies(c) }) else null
+            ))
+            if (st?.open == true) {
+                st.items.forEachIndexed { i, r ->
+                    val last = i == st.items.size - 1
+                    rows.add(commentRow(r).copy(
+                        id = id + "/" + commentId(r) + "/" + i,
+                        reply = true,
+                        replies = 0,
+                        onMoreReplies = if (last && Page.isValid(st.next) && !st.loading) ({ loadReplies(c) }) else null
+                    ))
+                }
+            }
+        }
+        if (topComments.isEmpty()) rows.add(Row.Message(activity.getString(R.string.nothing_here)))
+        if (Page.isValid(commentsNext)) rows.add(Row.Loading)
+        return rows
+    }
+
+    private fun refreshComments(animate: Boolean) {
+        if (animate) commentsAdapter.submitAnimated(commentRows()) else commentsAdapter.submit(commentRows())
+    }
+
+    private fun toggleReplies(c: CommentsInfoItem) {
+        val id = commentId(c)
+        val st = replyStates.getOrPut(id) { ReplyState() }
+        if (st.open) {
+            st.open = false
+            refreshComments(true)
+            return
+        }
+        st.open = true
+        if (st.items.isEmpty()) loadReplies(c) else refreshComments(true)
+    }
+
+    private fun loadReplies(c: CommentsInfoItem) {
+        val info = commentsInfo ?: return
+        val id = commentId(c)
+        val st = replyStates.getOrPut(id) { ReplyState() }
+        if (st.loading) return
+        val page = (if (st.items.isEmpty()) c.replies else st.next) ?: return
+        if (!Page.isValid(page)) return
+        st.loading = true
+        refreshComments(false)
+        val url = currentUrl
+        st.job = activity.lifecycleScope.launch {
+            try {
+                val res = withContext(Dispatchers.IO) { CommentsInfo.getMoreItems(yt, info, page) }
+                if (currentUrl != url) return@launch
+                st.items.addAll(res.items)
+                st.next = res.nextPage
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Toast.makeText(activity, Errors.text(activity, e), Toast.LENGTH_SHORT).show()
+                if (st.items.isEmpty()) st.open = false
+            } finally {
+                st.loading = false
+            }
+            refreshComments(true)
+        }
+    }
+
     private fun resetComments() {
         commentsJob?.cancel()
         commentsMoreJob?.cancel()
+        replyStates.values.forEach { it.job?.cancel() }
+        replyStates.clear()
+        topComments.clear()
         commentsInfo = null
         commentsNext = null
         commentsPanel.visibility = View.GONE
@@ -2257,11 +2342,8 @@ class PlayerSheet(
         val count = info.commentsCount
         commentsTitle.text = if (count > 0) activity.getString(R.string.comments) + "  " + Format.count(activity, count.toLong())
         else activity.getString(R.string.comments)
-        val rows = ArrayList<Row>()
-        info.relatedItems.forEach { rows.add(commentRow(it)) }
-        if (rows.isEmpty()) rows.add(Row.Message(activity.getString(R.string.nothing_here)))
-        if (Page.isValid(commentsNext)) rows.add(Row.Loading)
-        commentsAdapter.submit(rows)
+        if (topComments.isEmpty()) topComments.addAll(info.relatedItems)
+        refreshComments(false)
         commentsList.setPadding(0, 0, 0, host.navBottom() + dp(16))
         commentsPanel.visibility = View.VISIBLE
         commentsPanel.post {
@@ -2285,10 +2367,8 @@ class PlayerSheet(
                 val res = withContext(Dispatchers.IO) { CommentsInfo.getMoreItems(yt, info, page) }
                 if (currentUrl != url) return@launch
                 commentsNext = res.nextPage
-                val rows = ArrayList<Row>()
-                res.items.forEach { rows.add(commentRow(it)) }
-                if (Page.isValid(commentsNext)) rows.add(Row.Loading)
-                commentsAdapter.append(rows)
+                topComments.addAll(res.items)
+                refreshComments(false)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

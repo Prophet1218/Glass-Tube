@@ -72,7 +72,15 @@ sealed class Row {
         val text: CharSequence,
         val likes: String?,
         val date: String?,
-        val replies: Int
+        val replies: Int,
+        val id: String = "",
+        /** An answer, shown indented under its comment. */
+        val reply: Boolean = false,
+        val repliesOpen: Boolean = false,
+        val repliesLoading: Boolean = false,
+        val onReplies: (() -> Unit)? = null,
+        /** On the last loaded answer when there are more. */
+        val onMoreReplies: (() -> Unit)? = null
     ) : Row()
 }
 
@@ -86,6 +94,7 @@ fun Row.key(): String = when (this) {
     is Row.Group -> "group:$key"
     is Row.VideoRow -> "video:${video.id}"
     is Row.History -> "history:$query"
+    is Row.Comment -> if (id.isNotEmpty()) "comment:$id" else "obj:" + System.identityHashCode(this)
     Row.Loading -> "loading"
     else -> "obj:" + System.identityHashCode(this)
 }
@@ -334,17 +343,42 @@ class VideoAdapter(
                 t.maxLines = 6
                 t.setOnClickListener { t.maxLines = if (t.maxLines == 6) Int.MAX_VALUE else 6 }
                 val likes = v.findViewById<TextView>(R.id.likes)
-                val parts = listOfNotNull(
-                    row.likes,
-                    if (row.replies > 0) ctx.getString(R.string.replies, row.replies) else null
-                )
-                likes.text = parts.joinToString("   ")
+                likes.text = row.likes ?: ""
+                // answers: indented, smaller avatar
+                val d = ctx.resources.displayMetrics.density
+                v.setPaddingRelative(((if (row.reply) 62 else 16) * d).toInt(), v.paddingTop, v.paddingEnd, v.paddingBottom)
+                v.findViewById<ImageView>(R.id.avatar).layoutParams.apply {
+                    width = ((if (row.reply) 26 else 34) * d).toInt()
+                    height = width
+                }
+                val rb = v.findViewById<TextView>(R.id.repliesBtn)
+                if (row.replies > 0 && row.onReplies != null && !row.reply) {
+                    rb.visibility = View.VISIBLE
+                    rb.text = when {
+                        row.repliesLoading -> ctx.getString(R.string.loading_replies)
+                        row.repliesOpen -> "\u25B4  " + ctx.getString(R.string.hide_replies)
+                        else -> "\u25BE  " + ctx.getString(R.string.replies, row.replies)
+                    }
+                    rb.setOnClickListener { row.onReplies.invoke() }
+                } else {
+                    rb.visibility = View.GONE
+                    rb.setOnClickListener(null)
+                }
+                val more = v.findViewById<TextView>(R.id.moreReplies)
+                if (row.onMoreReplies != null) {
+                    more.visibility = View.VISIBLE
+                    more.text = "\u25BE  " + ctx.getString(R.string.more_replies)
+                    more.setOnClickListener { row.onMoreReplies.invoke() }
+                } else {
+                    more.visibility = View.GONE
+                    more.setOnClickListener(null)
+                }
                 val icon = ContextCompat.getDrawable(ctx, R.drawable.ic_like)?.mutate()
                 val sz = dp(ctx, 14)
                 icon?.setBounds(0, 0, sz, sz)
                 icon?.setTint(ContextCompat.getColor(ctx, R.color.text_muted))
                 likes.setCompoundDrawablesRelative(if (row.likes != null) icon else null, null, null, null)
-                likes.visibility = if (parts.isEmpty()) View.GONE else View.VISIBLE
+                likes.visibility = if (row.likes == null) View.GONE else View.VISIBLE
             }
         }
     }

@@ -196,4 +196,7 @@
     <string name="no_subtitles">This video has no subtitles</string>
     <string name="subtitles_on">Subtitles: %1$s</string>
     <string name="subtitles_off_toast">Subtitles off</string>
+    <string name="hide_replies">Hide replies</string>
+    <string name="more_replies">Show more replies</string>
+    <string name="loading_replies">Loading replies…</string>
 </resources>

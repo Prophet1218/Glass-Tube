@@ -195,4 +195,7 @@
     <string name="no_subtitles">Ehhez a videóhoz nincs felirat</string>
     <string name="subtitles_on">Felirat: %1$s</string>
     <string name="subtitles_off_toast">Felirat kikapcsolva</string>
+    <string name="hide_replies">Válaszok elrejtése</string>
+    <string name="more_replies">További válaszok</string>
+    <string name="loading_replies">Válaszok betöltése…</string>
 </resources>

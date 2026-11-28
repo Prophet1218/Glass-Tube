@@ -1,5 +1,3 @@
-## Lucent 1.6.0
+## Lucent 1.6.1
 
-- Glass Tube is now called **Lucent**
-- New icon: a round drop of glass with a play button and a soft ring of light around it, in all four styles (plain, frosted glass, liquid glass, grey base) and six colours of the icon chooser
-- The app updates in place: settings, history, subscriptions and downloads are kept
+- Comment replies can be opened: tap "12 replies" under a comment and the answers appear indented right below it; "Show more replies" loads the rest, "Hide replies" folds them away
