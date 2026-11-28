@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.glasstube"
         minSdk = 26
         targetSdk = 35
-        versionCode = 37
-        versionName = "1.6.1"
+        versionCode = 38
+        versionName = "1.6.2"
     }
 
     // Fixed signing key kept in the repo, so APKs built on GitHub and in Android Studio
@@ -49,6 +49,11 @@ android {
     lint {
         checkReleaseBuilds = false
         abortOnError = false
+        // only "API too new for older Android versions" (run in CI as a report)
+        checkOnly += "NewApi"
+        checkOnly += "InlinedApi"
+        textReport = true
+        textOutput = file("build/lint-newapi.txt")
     }
 
     packaging {

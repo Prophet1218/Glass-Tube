@@ -1,3 +1,3 @@
-## Lucent 1.6.1
+## Lucent 1.6.2
 
-- Comment replies can be opened: tap "12 replies" under a comment and the answers appear indented right below it; "Show more replies" loads the rest, "Hide replies" folds them away
+- If the app crashes, it now shows what went wrong instead of just closing: the error text can be copied or shared, and the app can be restarted from there

@@ -27,6 +27,12 @@ jobs:
       - name: Build APK
         run: gradle :app:assembleRelease --no-daemon --stacktrace
 
+      - name: Check for APIs newer than minSdk (report only)
+        continue-on-error: true
+        run: |
+          gradle :app:lintRelease --no-daemon || true
+          cat app/build/lint-newapi.txt || true
+
       - name: Version
         id: ver
         run: echo "name=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"

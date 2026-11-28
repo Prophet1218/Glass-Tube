@@ -198,4 +198,10 @@
     <string name="hide_replies">Válaszok elrejtése</string>
     <string name="more_replies">További válaszok</string>
     <string name="loading_replies">Válaszok betöltése…</string>
+    <string name="crash_title">A Lucent leállt</string>
+    <string name="crash_sub">Valami hiba történt. Másold ki vagy oszd meg ezt a szöveget, és küldd el, hogy javítani lehessen.</string>
+    <string name="crash_copy">Másolás</string>
+    <string name="crash_share">Megosztás</string>
+    <string name="crash_restart">Újraindítás</string>
+    <string name="crash_copied">Kimásolva</string>
 </resources>

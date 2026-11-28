@@ -199,4 +199,10 @@
     <string name="hide_replies">Hide replies</string>
     <string name="more_replies">Show more replies</string>
     <string name="loading_replies">Loading replies…</string>
+    <string name="crash_title">Lucent stopped</string>
+    <string name="crash_sub">Something went wrong. Copy or share this text and send it over, so it can be fixed.</string>
+    <string name="crash_copy">Copy</string>
+    <string name="crash_share">Share</string>
+    <string name="crash_restart">Restart</string>
+    <string name="crash_copied">Copied</string>
 </resources>
